@@ -6,13 +6,13 @@
 
 ## 当前进度
 
-P0（工程基建与质量门禁）已完成。P1-1 已实现消息模型、EventBus、流水线和调试适配器。P1-2 已实现插件系统、HandlerIndex、内置指令和会话等待器。P1-3 已实现运行指标、日志环形缓冲，以及 WebUI 概览页的实时指标和插件页。S0-1 已实现 Linux 沙箱（bubblewrap，Landlock 回退）。阶段计划见 [docs/P1_S0_PLAN.md](docs/P1_S0_PLAN.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
+P0、P1、S0 已合入 main。P1 覆盖消息流水线、插件系统和 WebUI 观测；S0 锁定 Linux / Windows 沙箱默认方案（无隔离时拒绝执行）。下一阶段 P2（平台适配）与 P4（沙箱产品化）计划见 [docs/P2_P4_PLAN.md](docs/P2_P4_PLAN.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
 
 | 组件 | 技术 | P0 已有内容 |
 |------|------|-------------|
 | 核心运行时 `verter/` | Python 3.12+、asyncio | 配置（沙箱默认本地、仅管理员、禁止联网）、CLI、生命周期、WebUI 后端 API（登录、系统信息） |
 | 沙箱执行器 `sandbox/` | Rust 1.99 | `verter-sandbox`：NDJSON 握手、`doctor`、协议 JSON Schema；Linux `exec`（bubblewrap，Landlock 回退）与可选 `setup`；Windows `exec`（AppContainer，已初始化时用隔离用户）与管理员 `setup` |
-| WebUI `webui/` | React 19 + shadcn/ui（Base UI） | 登录页、概览页、亮 / 暗主题、中 / 英文 |
+| WebUI `webui/` | React 19 + shadcn/ui（Base UI） | 登录页、概览页（实时指标）、插件页、亮 / 暗主题、中 / 英文 |
 
 ## 环境要求
 
