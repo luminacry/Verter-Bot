@@ -312,18 +312,19 @@ sequenceDiagram
 - 交付：monorepo 骨架；CI 矩阵（ubuntu + windows，Python 3.12 / 3.13）；三种语言的 lint、类型检查和测试；两条代码生成流水线；基准测试框架；shadcn 初始化、主题 token、AppShell 和登录页。
 - 验收：`just check` 在两个系统上全绿；WebUI 空壳在亮暗主题下通过视觉快照。
 
-### P1 核心运行时（同步进行 S0 沙箱技术验证）
+### P1 核心运行时（已完成，#4–#6；S0 #7–#8）
 
-细化后的范围、验收标准、PR 拆分和待确认事项见 [P1_S0_PLAN.md](P1_S0_PLAN.md)。
+细化记录见 [P1_S0_PLAN.md](P1_S0_PLAN.md)；S0 结论见 [S0_SANDBOX_REPORT.md](S0_SANDBOX_REPORT.md)。
 
 - 交付：消息模型、EventBus、9 个流水线阶段、Star 插件系统、HandlerIndex、热加载、控制台调试适配器、内置指令、指标；WebUI 概览页和插件页。
-- S0：Linux bubblewrap 原型；Windows AppContainer 与受限令牌两种原型的对比报告。
-- 验收：控制台跑通指令；热加载无需重启进程；基准测试满足 8.2 中的分发层目标，基线写入仓库；S0 报告确定 Windows 默认模式。
+- S0：Linux bubblewrap + Landlock 回退；Windows AppContainer + 隔离用户；`auto` 在无隔离时拒绝执行。
 
 ### P2 平台适配
 
+细化后的范围、验收标准、PR 拆分和待确认事项见 [P2_P4_PLAN.md](P2_P4_PLAN.md)。
+
 - 交付：OneBot v11（反向 + 正向 WebSocket）、Telegram（长轮询）、PlatformManager；WebUI 平台页。
-- 验收：NapCat 群聊和私聊收发正常；Telegram 私聊和群聊正常；断线可重连；模拟客户端集成测试通过。
+- 验收：模拟客户端覆盖私聊与群聊；断线可重连；空载内存锁定 8.2 的 80 MB 预算。
 
 ### P3 模型与会话
 
@@ -332,8 +333,10 @@ sequenceDiagram
 
 ### P4 沙箱
 
-- 交付：`verter-sandbox` 的 Linux 与 Windows 后端、SandboxClient、ComputerBooter、Agent 工具、审计；可选 Docker 后端；WebUI 沙箱页。
-- 验收：6.6 的安全测试集在 ubuntu-latest 和 windows-latest 上全部通过；Agent 能在会话工作区内执行 Python 和 Shell 并返回结果；未授权会话的调用被拒绝并记入审计。
+细化后的范围、验收标准、PR 拆分和待确认事项见 [P2_P4_PLAN.md](P2_P4_PLAN.md)。S0 默认方案已锁定。
+
+- 交付（本阶段）：协议 v2、SandboxClient.exec、ComputerBooter、审计、WebUI 沙箱页。不包含 Docker 后端。Agent 工具放到 P3 之后。
+- 验收：6.6 的安全测试集继续通过；未授权调用被拒绝并记入审计；无隔离时拒绝执行。
 
 ### P5 发布与加固
 
