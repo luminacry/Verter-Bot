@@ -188,7 +188,7 @@ pub fn spawn_suspended(
     // bytes that `caps` points at.
     let created = unsafe {
         CreateProcessW(
-            app.as_ptr(),
+            app.as_ref().map_or(ptr::null(), Vec::as_ptr),
             cmdline.as_mut_ptr(),
             null(),
             null(),

@@ -42,8 +42,14 @@ pub fn last_error(action: &str) -> Error {
     anyhow::anyhow!("{action} failed: Win32 error {code}{hint}")
 }
 
-pub fn application_name(command: &[OsString]) -> Vec<u16> {
-    command.first().map_or_else(|| wide(""), |exe| wide_os(exe))
+/// Absolute executable path as a wide string.
+///
+/// Relative names return `None` so `CreateProcess*` can search System32 / PATH / PATHEXT.
+/// Passing `"cmd"` as `lpApplicationName` looks for a file literally named `cmd` in the
+/// workspace and fails with `ERROR_FILE_NOT_FOUND`.
+pub fn application_name(command: &[OsString]) -> Option<Vec<u16>> {
+    let exe = command.first()?;
+    Path::new(exe).is_absolute().then(|| wide_os(exe))
 }
 
 pub fn command_line(args: &[OsString]) -> Vec<u16> {

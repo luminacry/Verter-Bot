@@ -93,7 +93,7 @@ pub fn spawn_suspended(
         CreateProcessWithTokenW(
             token.0,
             0,
-            app.as_ptr(),
+            app.as_ref().map_or(ptr::null(), Vec::as_ptr),
             cmdline.as_mut_ptr(),
             flags,
             env.as_ptr().cast(),

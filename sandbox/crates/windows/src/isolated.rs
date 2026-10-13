@@ -4,6 +4,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::ptr;
 
 use anyhow::{Context, Result, bail};
 use windows_sys::Win32::Foundation::FALSE;
@@ -122,7 +123,7 @@ pub fn spawn_suspended(
             domain.as_ptr(),
             password_w.as_ptr(),
             LOGON_WITH_PROFILE,
-            app.as_ptr(),
+            app.as_ref().map_or(ptr::null(), Vec::as_ptr),
             cmdline.as_mut_ptr(),
             flags,
             env.as_ptr().cast(),
