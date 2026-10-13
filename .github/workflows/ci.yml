@@ -148,6 +148,22 @@ jobs:
       - name: Sandbox tests
         run: cargo test --workspace --locked --manifest-path sandbox/Cargo.toml
 
+  sandbox-windows:
+    name: sandbox-windows
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sandbox
+      - name: Sandbox tests
+        run: cargo test --workspace --locked --manifest-path sandbox/Cargo.toml
+        env:
+          VERTER_SANDBOX_ADMIN: "1"
+
   deny:
     runs-on: ubuntu-24.04
     steps:

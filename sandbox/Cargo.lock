@@ -437,6 +437,7 @@ dependencies = [
  "tokio",
  "verter-sandbox-linux",
  "verter-sandbox-protocol",
+ "verter-sandbox-windows",
 ]
 
 [[package]]
@@ -456,6 +457,14 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "verter-sandbox-windows"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "windows-sys",
 ]
 
 [[package]]

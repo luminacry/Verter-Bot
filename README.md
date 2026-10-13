@@ -11,7 +11,7 @@ P0（工程基建与质量门禁）已完成。P1-1 已实现消息模型、Even
 | 组件 | 技术 | P0 已有内容 |
 |------|------|-------------|
 | 核心运行时 `verter/` | Python 3.12+、asyncio | 配置（沙箱默认本地、仅管理员、禁止联网）、CLI、生命周期、WebUI 后端 API（登录、系统信息） |
-| 沙箱执行器 `sandbox/` | Rust 1.99 | `verter-sandbox`：NDJSON 握手、`doctor`、协议 JSON Schema；Linux `exec`（bubblewrap，Landlock 回退）与可选 `setup` |
+| 沙箱执行器 `sandbox/` | Rust 1.99 | `verter-sandbox`：NDJSON 握手、`doctor`、协议 JSON Schema；Linux `exec`（bubblewrap，Landlock 回退）与可选 `setup`；Windows `exec`（AppContainer，已初始化时用隔离用户）与管理员 `setup` |
 | WebUI `webui/` | React 19 + shadcn/ui（Base UI） | 登录页、概览页、亮 / 暗主题、中 / 英文 |
 
 ## 环境要求

@@ -135,12 +135,15 @@ async def _say(
 ) -> list[str]:
     assert platform.inject(text, sender_id=sender_id, group_id=group_id) is not None
     sent: list[str] = []
+    # First reply can wait on plugin import; later chunks use a short idle timeout.
+    timeout = 5.0
     while True:
         try:
-            message = await asyncio.wait_for(platform.sent.get(), 0.2)
+            message = await asyncio.wait_for(platform.sent.get(), timeout)
         except TimeoutError:
             return sent
         sent.append(message.chain.outline())
+        timeout = 0.2
 
 
 async def test_console_commands_permissions_and_hot_reload(tmp_path: Path) -> None:
