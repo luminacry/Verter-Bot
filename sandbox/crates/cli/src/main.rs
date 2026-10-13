@@ -6,6 +6,7 @@ mod serve;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -278,6 +279,7 @@ fn exec_command(
     ExitCode::FAILURE
 }
 
+#[cfg(target_os = "linux")]
 fn exit_code(code: Option<i32>) -> ExitCode {
     let Some(code) = code else {
         return ExitCode::from(128);
