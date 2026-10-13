@@ -82,7 +82,25 @@ export const PLUGINS = [
   },
 ]
 
+export const PLATFORMS = [
+  {
+    id: "qq_main",
+    type: "onebot_v11",
+    status: "running",
+    restarts: 0,
+    last_error: null,
+  },
+  {
+    id: "tg_main",
+    type: "telegram",
+    status: "error",
+    restarts: 2,
+    last_error: "ConnectionError: closed",
+  },
+]
+
 export type PluginFixture = "ok" | "empty" | "error"
+export type PlatformFixture = "ok" | "empty" | "error"
 
 /** Seeds theme and language before any page script runs. */
 export async function usePreferences(
@@ -102,7 +120,11 @@ export async function usePreferences(
 /** Serves deterministic API responses so screenshots never depend on the host. */
 export async function mockApi(
   page: Page,
-  { signedIn, plugins = "ok" }: { signedIn: boolean; plugins?: PluginFixture }
+  {
+    signedIn,
+    plugins = "ok",
+    platforms = "ok",
+  }: { signedIn: boolean; plugins?: PluginFixture; platforms?: PlatformFixture }
 ) {
   await page.route(
     (url) => url.pathname === "/api/auth/me",
@@ -126,6 +148,15 @@ export async function mockApi(
         return route.fulfill({ status: 500, json: { detail: "unavailable" } })
       }
       return route.fulfill({ json: plugins === "empty" ? [] : PLUGINS })
+    }
+  )
+  await page.route(
+    (url) => url.pathname === "/api/platforms",
+    (route) => {
+      if (platforms === "error") {
+        return route.fulfill({ status: 500, json: { detail: "unavailable" } })
+      }
+      return route.fulfill({ json: platforms === "empty" ? [] : PLATFORMS })
     }
   )
   if (signedIn) {

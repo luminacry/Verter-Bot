@@ -172,6 +172,7 @@ class CoreLifecycle:
         dashboard = DashboardContext.create(self.config, runner)
         dashboard.bus = self.event_bus
         dashboard.plugins = self.plugins
+        dashboard.platforms = self.platforms
         app = create_app(dashboard, webui_dist=self._webui_dist)
         sock = bind_tcp(settings.host, settings.port)
         self._port = sock.getsockname()[1]

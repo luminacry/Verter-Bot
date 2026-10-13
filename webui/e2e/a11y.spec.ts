@@ -67,4 +67,34 @@ for (const theme of THEMES) {
     await expect(page.getByTestId("plugins-error")).toBeVisible()
     expect(await seriousViolations(page)).toEqual([])
   })
+
+  test(`platforms page has no serious a11y violations (${theme})`, async ({
+    page,
+  }) => {
+    await usePreferences(page, "zh-CN", theme)
+    await mockApi(page, { signedIn: true })
+    await page.goto("/platforms")
+    await expect(page.getByTestId("platforms-list")).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+  })
+
+  test(`platforms empty state has no serious a11y violations (${theme})`, async ({
+    page,
+  }) => {
+    await usePreferences(page, "en", theme)
+    await mockApi(page, { signedIn: true, platforms: "empty" })
+    await page.goto("/platforms")
+    await expect(page.getByTestId("platforms-empty")).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+  })
+
+  test(`platforms error state has no serious a11y violations (${theme})`, async ({
+    page,
+  }) => {
+    await usePreferences(page, "en", theme)
+    await mockApi(page, { signedIn: true, platforms: "error" })
+    await page.goto("/platforms")
+    await expect(page.getByTestId("platforms-error")).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+  })
 }

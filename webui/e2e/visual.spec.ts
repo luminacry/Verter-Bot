@@ -24,6 +24,8 @@ for (const language of LANGUAGES) {
       await page.goto("/")
       await expect(page.getByText("bubblewrap")).toBeVisible()
       await expect(page.getByTestId("metrics-status")).toBeVisible()
+      await expect(page.getByTestId("overview-platforms")).toBeVisible()
+      await expect(page.getByText("qq_main")).toBeVisible()
       await expect(page).toHaveScreenshot(`overview-${language}-${theme}.png`, {
         fullPage: true,
       })
@@ -40,6 +42,20 @@ for (const language of LANGUAGES) {
       await expect(page).toHaveScreenshot(`plugins-${language}-${theme}.png`, {
         fullPage: true,
       })
+    })
+
+    test(`platforms page looks right (${language}, ${theme})`, async ({
+      page,
+    }) => {
+      await usePreferences(page, language, theme)
+      await mockApi(page, { signedIn: true })
+      await page.goto("/platforms")
+      await expect(page.getByTestId("platforms-list")).toBeVisible()
+      await expect(page.getByText("ConnectionError: closed")).toBeVisible()
+      await expect(page).toHaveScreenshot(
+        `platforms-${language}-${theme}.png`,
+        { fullPage: true }
+      )
     })
   }
 }
@@ -60,6 +76,26 @@ test("plugins page error state", async ({ page }) => {
   await page.goto("/plugins")
   await expect(page.getByTestId("plugins-error")).toBeVisible()
   await expect(page).toHaveScreenshot("plugins-error-en-dark.png", {
+    fullPage: true,
+  })
+})
+
+test("platforms page empty state", async ({ page }) => {
+  await usePreferences(page, "zh-CN", "light")
+  await mockApi(page, { signedIn: true, platforms: "empty" })
+  await page.goto("/platforms")
+  await expect(page.getByTestId("platforms-empty")).toBeVisible()
+  await expect(page).toHaveScreenshot("platforms-empty-zh-CN-light.png", {
+    fullPage: true,
+  })
+})
+
+test("platforms page error state", async ({ page }) => {
+  await usePreferences(page, "en", "dark")
+  await mockApi(page, { signedIn: true, platforms: "error" })
+  await page.goto("/platforms")
+  await expect(page.getByTestId("platforms-error")).toBeVisible()
+  await expect(page).toHaveScreenshot("platforms-error-en-dark.png", {
     fullPage: true,
   })
 })

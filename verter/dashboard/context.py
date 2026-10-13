@@ -11,6 +11,7 @@ from verter.core.config import VerterConfig
 from verter.core.event_bus import EventBus
 from verter.core.log import logger
 from verter.core.log_ring import RING, LogRing
+from verter.core.platform.manager import PlatformManager
 from verter.core.security import generate_secret
 from verter.core.star.models import PluginControl
 from verter.dashboard.auth import LoginRateLimiter
@@ -26,6 +27,7 @@ class DashboardContext:
     login_limiter: LoginRateLimiter = field(default_factory=LoginRateLimiter)
     bus: EventBus | None = None
     plugins: PluginControl | None = None
+    platforms: PlatformManager | None = None
     logs: LogRing = field(default_factory=lambda: RING)
 
     @classmethod

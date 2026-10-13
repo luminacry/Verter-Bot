@@ -91,9 +91,19 @@ const pluginsRoute = createRoute({
   ),
 })
 
+const platformsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/platforms",
+  staticData: { titleKey: "nav.platforms" },
+  component: lazyRouteComponent(
+    () => import("@/features/platforms/platforms-page"),
+    "PlatformsPage"
+  ),
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appRoute.addChildren([overviewRoute, pluginsRoute]),
+  appRoute.addChildren([overviewRoute, pluginsRoute, platformsRoute]),
 ])
 
 export function createAppRouter(queryClient: QueryClient) {

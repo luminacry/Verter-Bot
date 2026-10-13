@@ -7,6 +7,7 @@ export const zhCN = {
     section: "管理",
     overview: "概览",
     plugins: "插件",
+    platforms: "平台",
   },
   auth: {
     title: "登录 Verter-Bot",
@@ -85,6 +86,12 @@ export const zhCN = {
       description: "请确认服务正在运行，然后重试。",
       retry: "重试",
     },
+    platforms: {
+      title: "适配器",
+      description: "已启用的 IM 适配器",
+      none: "没有正在运行的适配器",
+      restarts: "重启 {{count}} 次",
+    },
     metrics: {
       title: "运行指标",
       description: "事件总线与流水线，通过实时连接刷新",
@@ -99,6 +106,28 @@ export const zhCN = {
       failed: "失败",
       timedOut: "超时",
       latency: "平均延迟",
+    },
+  },
+  platforms: {
+    title: "平台",
+    description: "适配器运行状态。Token 和监听地址仍在 config.yaml 里修改。",
+    restart: "重启 {{name}}",
+    restartLabel: "重启",
+    restarts: "已重启 {{count}} 次",
+    lastError: "最后错误",
+    actionFailed: "操作失败，请稍后重试",
+    stateRunning: "运行中",
+    stateError: "错误",
+    stateStopped: "已停止",
+    statePending: "等待",
+    empty: {
+      title: "没有平台",
+      description: "在 config.yaml 里启用适配器后重新启动。",
+    },
+    error: {
+      title: "无法加载平台",
+      description: "请确认服务正在运行，然后重试。",
+      retry: "重试",
     },
   },
   plugins: {
