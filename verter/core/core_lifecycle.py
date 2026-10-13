@@ -1,7 +1,7 @@
 """Process lifecycle: start long-running components, then stop them in reverse order.
 
-P0 owns only the dashboard server; the event bus, pipeline, and platform adapters
-join this lifecycle in P1 and P2.
+Start order: pipeline, event bus, platform adapters, dashboard. Stopping first
+halts the adapters so no new events arrive, then drains the event bus.
 """
 
 from __future__ import annotations
@@ -11,14 +11,18 @@ import contextlib
 import signal
 import socket
 import sys
-from collections.abc import Generator
+from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
 
 import uvicorn
 
 from verter.core.computer.runner import RunnerStatus, probe_runner, resolve_runner_binary
-from verter.core.config import VerterConfig
+from verter.core.config import PlatformConfig, VerterConfig
+from verter.core.event_bus import EventBus
 from verter.core.log import logger
+from verter.core.pipeline.context import HandlerSource, NullHandlerSource, PipelineContext
+from verter.core.pipeline.scheduler import PipelineScheduler
+from verter.core.platform.manager import PlatformManager
 from verter.dashboard.app import create_app
 from verter.dashboard.context import DashboardContext
 
@@ -50,10 +54,28 @@ def bind_tcp(host: str, port: int) -> socket.socket:
     return sock
 
 
+def _ignore_shutdown_request() -> None:
+    return None
+
+
 class CoreLifecycle:
-    def __init__(self, config: VerterConfig, *, webui_dist: Path | None = None) -> None:
+    def __init__(
+        self,
+        config: VerterConfig,
+        *,
+        webui_dist: Path | None = None,
+        extra_platforms: Sequence[PlatformConfig] = (),
+        handlers: HandlerSource | None = None,
+        request_shutdown: Callable[[], None] = _ignore_shutdown_request,
+    ) -> None:
         self.config = config
         self._webui_dist = webui_dist
+        self._extra_platforms = list(extra_platforms)
+        self._handlers = handlers or NullHandlerSource()
+        self._request_shutdown = request_shutdown
+        self.pipeline: PipelineScheduler | None = None
+        self.event_bus: EventBus | None = None
+        self.platforms: PlatformManager | None = None
         self._server: _EmbeddedServer | None = None
         self._serve_task: asyncio.Task[None] | None = None
         self._port: int | None = None
@@ -66,13 +88,47 @@ class CoreLifecycle:
         return f"http://[{host}]:{self._port}" if ":" in host else f"http://{host}:{self._port}"
 
     async def start(self) -> None:
-        """Start all components.
+        """Start all components; call ``stop()`` afterwards even if this raises.
 
         Raises:
+            ConfigError: If a platform entry is invalid.
             OSError: If the dashboard address cannot be bound.
             RuntimeError: If the dashboard server exits during startup.
         """
         runner = await self._probe_sandbox()
+        await self._start_runtime()
+        await self._start_dashboard(runner)
+
+    async def stop(self) -> None:
+        platforms, self.platforms = self.platforms, None
+        if platforms is not None:
+            await platforms.stop()
+        bus, self.event_bus = self.event_bus, None
+        if bus is not None:
+            await bus.stop()
+        await self._stop_dashboard()
+
+    async def _start_runtime(self) -> None:
+        pipeline = PipelineScheduler(PipelineContext(self.config, self._handlers))
+        await pipeline.initialize()
+        self.pipeline = pipeline
+        runtime = self.config.runtime
+        bus = EventBus(
+            pipeline,
+            max_pending=runtime.max_pending_events,
+            workers=runtime.workers,
+            event_timeout_s=runtime.event_timeout_s,
+        )
+        await bus.start()
+        self.event_bus = bus
+        self.platforms = PlatformManager(
+            [*self.config.platform, *self._extra_platforms],
+            bus,
+            request_shutdown=self._request_shutdown,
+        )
+        await self.platforms.start()
+
+    async def _start_dashboard(self, runner: RunnerStatus) -> None:
         settings = self.config.dashboard
         if not settings.enable:
             logger.info("Dashboard disabled in config")
@@ -103,7 +159,7 @@ class CoreLifecycle:
             logger.info("WebUI assets not found; serving the API only")
         logger.info("Dashboard listening on %s", self.dashboard_url)
 
-    async def stop(self) -> None:
+    async def _stop_dashboard(self) -> None:
         server, task = self._server, self._serve_task
         self._server = self._serve_task = None
         if server is None or task is None:
@@ -134,14 +190,23 @@ class CoreLifecycle:
 
 
 async def serve(
-    config: VerterConfig, *, webui_dist: Path | None = None, stop: asyncio.Event | None = None
+    config: VerterConfig,
+    *,
+    webui_dist: Path | None = None,
+    extra_platforms: Sequence[PlatformConfig] = (),
+    stop: asyncio.Event | None = None,
 ) -> None:
-    """Run the lifecycle until ``stop`` is set, SIGTERM arrives, or the task is cancelled."""
+    """Run until ``stop`` is set, SIGTERM arrives, an adapter requests shutdown, or cancellation."""
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     with contextlib.suppress(NotImplementedError):
         loop.add_signal_handler(signal.SIGTERM, stop.set)
-    lifecycle = CoreLifecycle(config, webui_dist=webui_dist)
+    lifecycle = CoreLifecycle(
+        config,
+        webui_dist=webui_dist,
+        extra_platforms=extra_platforms,
+        request_shutdown=stop.set,
+    )
     try:
         await lifecycle.start()
         await stop.wait()

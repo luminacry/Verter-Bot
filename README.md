@@ -6,7 +6,7 @@
 
 ## 当前进度
 
-P0（工程基建与质量门禁）已完成。P1（核心运行时）与 S0（沙箱技术验证）的阶段计划见 [docs/P1_S0_PLAN.md](docs/P1_S0_PLAN.md)（待审批），总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
+P0（工程基建与质量门禁）已完成。P1-1 正在实现消息模型、EventBus、流水线和调试适配器。阶段计划见 [docs/P1_S0_PLAN.md](docs/P1_S0_PLAN.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
 
 | 组件 | 技术 | P0 已有内容 |
 |------|------|-------------|
@@ -30,6 +30,7 @@ just build-sandbox    # 构建 verter-sandbox
 just build-webui      # 构建 WebUI
 uv run verter init    # 生成 data/config.yaml 并打印管理员密码
 uv run verter run     # 访问 http://127.0.0.1:6185
+uv run verter run --console   # 在当前终端里和机器人对话
 ```
 
 `uv run verter doctor` 会检查配置、沙箱执行器和 WebUI 构建产物。

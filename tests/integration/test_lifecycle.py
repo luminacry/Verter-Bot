@@ -30,8 +30,10 @@ async def test_start_fails_when_the_port_is_taken(config: VerterConfig) -> None:
     try:
         config.dashboard.port = holder.getsockname()[1]
         config.computer.enable = False
+        lifecycle = CoreLifecycle(config)
         with pytest.raises(OSError):  # noqa: PT011 - errno differs between platforms
-            await CoreLifecycle(config).start()
+            await lifecycle.start()
+        await lifecycle.stop()
     finally:
         holder.close()
 
