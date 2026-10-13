@@ -22,7 +22,7 @@ mod restricted;
 mod util;
 
 #[cfg(windows)]
-pub use exec::{ExecRequest, ExecResult, execute};
+pub use exec::{ExecRequest, ExecResult, OutputCapture, execute};
 #[cfg(windows)]
 pub use isolated::{SetupOutcome, setup, uninstall};
 #[cfg(windows)]
@@ -33,7 +33,8 @@ mod unsupported;
 
 #[cfg(not(windows))]
 pub use unsupported::{
-    ExecRequest, ExecResult, HostReport, SetupOutcome, execute, host_report, setup, uninstall,
+    ExecRequest, ExecResult, HostReport, OutputCapture, SetupOutcome, execute, host_report, setup,
+    uninstall,
 };
 
 pub use policy::{Backend, RequestedBackend};

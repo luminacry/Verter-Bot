@@ -260,7 +260,11 @@ fn exec_command(
         cpu_seconds: cpu,
         env: Vec::new(),
     };
-    match verter_sandbox_linux::execute(&helper, &request) {
+    match verter_sandbox_linux::execute(
+        &helper,
+        &request,
+        verter_sandbox_linux::OutputCapture::Inherit,
+    ) {
         Ok(result) => {
             eprintln!("verter-sandbox: isolation {}", result.backend.as_str());
             if result.timed_out {
@@ -311,7 +315,8 @@ fn exec_command(
         memory_bytes,
         nproc,
     };
-    match verter_sandbox_windows::execute(&request) {
+    match verter_sandbox_windows::execute(&request, verter_sandbox_windows::OutputCapture::Inherit)
+    {
         Ok(result) => {
             eprintln!("verter-sandbox: isolation {}", result.backend.as_str());
             if result.timed_out {

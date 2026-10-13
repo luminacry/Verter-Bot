@@ -64,6 +64,8 @@ pub struct HostReport {
     pub auto_backend: Option<Backend>,
     /// True when a Landlock ruleset can be enforced.
     pub landlock_available: bool,
+    /// Enforcement status, or the reason Landlock cannot isolate.
+    pub landlock_detail: String,
     /// Human line such as `auto: landlock`.
     pub auto_line: String,
     /// Human line describing the Landlock fallback.
@@ -160,6 +162,7 @@ fn report_from(cap: Capability) -> HostReport {
         bubblewrap_detail,
         auto_backend,
         landlock_available: landlock_ready,
+        landlock_detail: landlock_phrase(&cap.landlock),
         auto_line,
         fallback_line: format!("fallback: {}", landlock_phrase(&cap.landlock)),
         policy_line: POLICY.to_owned(),

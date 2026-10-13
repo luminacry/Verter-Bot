@@ -55,6 +55,14 @@ pub struct ExecResult {
     pub timed_out: bool,
 }
 
+/// Where the sandboxed command's stdout and stderr go.
+pub enum OutputCapture<'a> {
+    /// Inherit the caller's stdio.
+    Inherit,
+    /// Pipe both streams. Unused on this target.
+    Piped(&'a mut dyn FnMut(bool, &[u8])),
+}
+
 /// What `setup` did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupOutcome {
@@ -84,7 +92,7 @@ pub fn host_report() -> HostReport {
 /// # Errors
 ///
 /// Always returns an error.
-pub fn execute(_request: &ExecRequest) -> Result<ExecResult> {
+pub fn execute(_request: &ExecRequest, _capture: OutputCapture<'_>) -> Result<ExecResult> {
     bail!("Windows sandbox exec is only available on Windows")
 }
 

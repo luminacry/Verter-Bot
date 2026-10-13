@@ -25,6 +25,26 @@
           "description": "Linux namespaces via the `bwrap` executable.",
           "type": "string",
           "const": "bubblewrap"
+        },
+        {
+          "description": "Linux Landlock, seccomp, and rlimits without namespaces.",
+          "type": "string",
+          "const": "landlock"
+        },
+        {
+          "description": "Windows lowbox `AppContainer` plus a Job Object.",
+          "type": "string",
+          "const": "appcontainer"
+        },
+        {
+          "description": "Windows local user created by `setup`, plus a Job Object.",
+          "type": "string",
+          "const": "isolated"
+        },
+        {
+          "description": "Windows restricted token plus a Job Object. Network denial is not enforced.",
+          "type": "string",
+          "const": "restricted"
         }
       ]
     },
@@ -102,6 +122,71 @@
           ]
         },
         {
+          "title": "Exec",
+          "description": "Run a command inside an isolation backend. Refusals use the error channel.",
+          "type": "object",
+          "properties": {
+            "backend": {
+              "description": "Isolation backend. `auto` never falls through to the host.",
+              "$ref": "#/$defs/ExecBackend"
+            },
+            "command": {
+              "description": "Program and arguments. The first item is the executable.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "id": {
+              "description": "Correlation id echoed in stdout, stderr, and exit messages.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "memory_bytes": {
+              "description": "Address-space / job memory limit in bytes.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "network": {
+              "description": "When true, outbound network is requested.",
+              "type": "boolean"
+            },
+            "nproc": {
+              "description": "Process-count limit inside the sandbox.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "timeout_ms": {
+              "description": "Wall-clock limit in milliseconds.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "exec"
+            },
+            "workspace": {
+              "description": "Writable workspace directory on the host.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "command",
+            "workspace",
+            "backend",
+            "network",
+            "timeout_ms",
+            "memory_bytes",
+            "nproc"
+          ]
+        },
+        {
           "title": "Shutdown",
           "description": "Ask the runner to exit.",
           "type": "object",
@@ -134,6 +219,56 @@
           "description": "The client's protocol version is not supported.",
           "type": "string",
           "const": "unsupported_protocol_version"
+        },
+        {
+          "description": "No isolation backend can run the command; it was not started on the host.",
+          "type": "string",
+          "const": "isolation_unavailable"
+        },
+        {
+          "description": "The workspace path is missing, is not a directory, or cannot be used.",
+          "type": "string",
+          "const": "invalid_workspace"
+        },
+        {
+          "description": "The `exec` request was malformed or cannot be honored on this platform.",
+          "type": "string",
+          "const": "invalid_exec"
+        }
+      ]
+    },
+    "ExecBackend": {
+      "description": "Backend requested by [`ClientMessage::Exec`].",
+      "oneOf": [
+        {
+          "description": "Host default. Never falls through to an unsandboxed run.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "Linux namespaces via the `bwrap` executable.",
+          "type": "string",
+          "const": "bubblewrap"
+        },
+        {
+          "description": "Linux Landlock, seccomp, and rlimits without namespaces.",
+          "type": "string",
+          "const": "landlock"
+        },
+        {
+          "description": "Windows lowbox `AppContainer` plus a Job Object.",
+          "type": "string",
+          "const": "appcontainer"
+        },
+        {
+          "description": "Windows local user created by `setup`, plus a Job Object.",
+          "type": "string",
+          "const": "isolated"
+        },
+        {
+          "description": "Windows restricted token plus a Job Object.",
+          "type": "string",
+          "const": "restricted"
         }
       ]
     },
@@ -216,6 +351,102 @@
           "required": [
             "type",
             "nonce"
+          ]
+        },
+        {
+          "title": "ExecStdout",
+          "description": "One chunk of the command's standard output, base64-encoded.",
+          "type": "object",
+          "properties": {
+            "chunk_b64": {
+              "description": "Standard-output bytes, standard base64 with padding.",
+              "type": "string"
+            },
+            "id": {
+              "description": "The `id` from the matching [`ClientMessage::Exec`].",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "exec_stdout"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chunk_b64"
+          ]
+        },
+        {
+          "title": "ExecStderr",
+          "description": "One chunk of the command's standard error, base64-encoded.",
+          "type": "object",
+          "properties": {
+            "chunk_b64": {
+              "description": "Standard-error bytes, standard base64 with padding.",
+              "type": "string"
+            },
+            "id": {
+              "description": "The `id` from the matching [`ClientMessage::Exec`].",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "exec_stderr"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chunk_b64"
+          ]
+        },
+        {
+          "title": "ExecExit",
+          "description": "The sandboxed command has exited. Always the last message for an `exec`.",
+          "type": "object",
+          "properties": {
+            "backend": {
+              "description": "Backend that actually isolated the command.",
+              "$ref": "#/$defs/BackendKind"
+            },
+            "exit_code": {
+              "description": "Process exit code. `124` when the wall-clock limit fired.",
+              "type": "integer",
+              "format": "int32"
+            },
+            "id": {
+              "description": "The `id` from the matching [`ClientMessage::Exec`].",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "timed_out": {
+              "description": "True when the wall-clock limit fired and the process tree was killed.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "exec_exit"
+            },
+            "wall_ms": {
+              "description": "Wall-clock milliseconds from spawn until exit.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "exit_code",
+            "timed_out",
+            "backend",
+            "wall_ms"
           ]
         },
         {

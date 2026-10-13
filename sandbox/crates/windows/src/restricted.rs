@@ -10,11 +10,11 @@ use windows_sys::Win32::Security::{
 };
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessWithTokenW,
-    GetCurrentProcess, OpenProcessToken, PROCESS_INFORMATION,
+    GetCurrentProcess, OpenProcessToken, PROCESS_INFORMATION, STARTUPINFOW,
 };
 
 use crate::appcontainer::Spawned;
-use crate::util::{command_line, environment_block, last_error, null, startup_with_stdio};
+use crate::util::{StartupStdio, command_line, environment_block, last_error, null};
 
 struct Token(HANDLE);
 
@@ -74,13 +74,18 @@ fn restricted_token() -> Result<Token> {
 pub fn spawn_suspended(
     command: &[std::ffi::OsString],
     workspace: &std::path::Path,
+    stdio: StartupStdio,
 ) -> Result<Spawned> {
     let token = restricted_token()?;
     let app = crate::util::application_name(command);
     let mut cmdline = command_line(command);
     let env = environment_block(workspace);
     let cwd = crate::util::wide_os(crate::util::native_path(workspace).as_os_str());
-    let startup = startup_with_stdio();
+    let mut startup = STARTUPINFOW {
+        cb: u32::try_from(size_of::<STARTUPINFOW>()).unwrap_or(0),
+        ..STARTUPINFOW::default()
+    };
+    stdio.apply_to(&mut startup);
     let mut info = PROCESS_INFORMATION::default();
     let flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW;
     // SAFETY: `token.0` is open and the command, environment, directory, and startup info are live.
@@ -88,7 +93,7 @@ pub fn spawn_suspended(
         CreateProcessWithTokenW(
             token.0,
             0,
-            app.as_ptr(),
+            app.as_ref().map_or(ptr::null(), Vec::as_ptr),
             cmdline.as_mut_ptr(),
             flags,
             env.as_ptr().cast(),

@@ -48,7 +48,13 @@ fn doctor_reports_windows_isolation() {
         .output()
         .unwrap();
     let report: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(report["backends"], serde_json::json!([]));
+    let kinds: Vec<&str> = report["backends"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["kind"].as_str())
+        .collect();
+    assert_eq!(kinds, ["appcontainer", "isolated", "restricted"]);
 }
 
 #[test]

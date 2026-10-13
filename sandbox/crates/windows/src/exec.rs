@@ -7,6 +7,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 
 use crate::policy::{Backend, RequestedBackend, choose};
+use crate::util::{AnonymousPipes, StartupStdio};
 
 /// What `execute` should run.
 #[derive(Debug, Clone)]
@@ -27,6 +28,16 @@ pub struct ExecRequest {
     pub nproc: u64,
 }
 
+/// Where the sandboxed command's stdout and stderr go.
+pub enum OutputCapture<'a> {
+    /// Inherit the caller's stdio. Used by CLI `exec`.
+    Inherit,
+    /// Pipe both streams and invoke the callback for each read. stdin is EOF.
+    ///
+    /// The bool is `true` for stderr.
+    Piped(&'a mut dyn FnMut(bool, &[u8])),
+}
+
 /// Result of a sandboxed command.
 #[derive(Debug)]
 pub struct ExecResult {
@@ -44,7 +55,7 @@ pub struct ExecResult {
 ///
 /// Returns an error when no backend can isolate the command or the process cannot be created.
 /// The command is not resumed in those cases.
-pub fn execute(request: &ExecRequest) -> Result<ExecResult> {
+pub fn execute(request: &ExecRequest, capture: OutputCapture<'_>) -> Result<ExecResult> {
     if request.command.is_empty() {
         bail!("command is empty");
     }
@@ -63,6 +74,14 @@ pub fn execute(request: &ExecRequest) -> Result<ExecResult> {
     let processes = u32::try_from(request.nproc.max(1)).unwrap_or(u32::MAX);
     let memory = usize::try_from(request.memory_bytes.max(1)).unwrap_or(usize::MAX);
     let job = crate::job::create(memory, processes)?;
+    let mut pipes = if matches!(capture, OutputCapture::Piped(_)) {
+        Some(AnonymousPipes::new()?)
+    } else {
+        None
+    };
+    let stdio = pipes
+        .as_ref()
+        .map_or_else(StartupStdio::inherit, |p| p.child);
     let spawned = match backend {
         Backend::AppContainer => {
             let sid = crate::appcontainer::profile_sid()?;
@@ -72,15 +91,33 @@ pub fn execute(request: &ExecRequest) -> Result<ExecResult> {
                 &workspace,
                 request.network,
                 sid.0,
+                stdio,
             )?
         }
-        Backend::Restricted => crate::restricted::spawn_suspended(&request.command, &workspace)?,
+        Backend::Restricted => {
+            crate::restricted::spawn_suspended(&request.command, &workspace, stdio)?
+        }
         Backend::Isolated => {
-            crate::isolated::spawn_suspended(&request.command, &workspace, request.network)?
+            crate::isolated::spawn_suspended(&request.command, &workspace, request.network, stdio)?
         }
     };
+    if let Some(pipes) = pipes.as_mut() {
+        pipes.close_child_ends();
+    }
     crate::job::assign_and_resume(&job, spawned.process, spawned.thread)?;
-    let (exit_code, timed_out) = crate::job::wait(spawned.process, &job, request.timeout)?;
+    let (exit_code, timed_out) = match (pipes.as_mut(), capture) {
+        (_, OutputCapture::Inherit) => crate::job::wait(spawned.process, &job, request.timeout)?,
+        (Some(pipes), OutputCapture::Piped(on_chunk)) => {
+            let result = crate::job::wait_polling(spawned.process, &job, request.timeout, || {
+                pipes.drain(on_chunk);
+            })?;
+            pipes.read_to_end(on_chunk);
+            result
+        }
+        (None, OutputCapture::Piped(_)) => {
+            bail!("piped stdio missing anonymous pipes")
+        }
+    };
     Ok(ExecResult {
         backend,
         exit_code,

@@ -47,10 +47,10 @@ async def test_lifecycle_routes_inmemory_messages(config: VerterConfig) -> None:
 async def test_available_sandbox_does_not_block_startup(
     config: VerterConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def probe(binary: Path | None, *, reply_timeout: float = 5.0) -> RunnerStatus:
+    async def start(self) -> RunnerStatus:
         return RunnerStatus(available=True, version="9.9.9", path=Path("/opt/verter-sandbox"))
 
-    monkeypatch.setattr("verter.core.core_lifecycle.probe_runner", probe)
+    monkeypatch.setattr("verter.core.core_lifecycle.ComputerBooter.start", start)
     config.dashboard.enable = False
     lifecycle = CoreLifecycle(config)
     await lifecycle.start()

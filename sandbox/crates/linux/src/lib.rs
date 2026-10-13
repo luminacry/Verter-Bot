@@ -25,6 +25,6 @@ pub use apparmor::{ApparmorSetup, PROFILE, setup};
 #[cfg(target_os = "linux")]
 pub use apply::apply_from_args;
 #[cfg(target_os = "linux")]
-pub use exec::{ExecRequest, ExecResult, execute};
+pub use exec::{ExecRequest, ExecResult, OutputCapture, execute};
 #[cfg(target_os = "linux")]
 pub use probe::{Backend, HostReport, RequestedBackend, host_report, probe_landlock_main};
