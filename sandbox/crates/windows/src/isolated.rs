@@ -49,29 +49,8 @@ pub fn setup(install: bool) -> Result<SetupOutcome> {
     let online_password = password_or_create(&dir.join("online.password"))?;
     ensure_user(OFFLINE_USER, &offline_password)?;
     ensure_user(ONLINE_USER, &online_password)?;
-    let _ = tool(
-        "netsh",
-        &[
-            "advfirewall",
-            "firewall",
-            "delete",
-            "rule",
-            &format!("name={FIREWALL_RULE}"),
-        ],
-    );
-    tool(
-        "netsh",
-        &[
-            "advfirewall",
-            "firewall",
-            "add",
-            "rule",
-            &format!("name={FIREWALL_RULE}"),
-            "dir=out",
-            "action=block",
-            &format!("localuser={OFFLINE_USER}"),
-        ],
-    )?;
+    remove_offline_firewall();
+    add_offline_firewall()?;
     Ok(SetupOutcome::Installed)
 }
 
@@ -84,16 +63,7 @@ pub fn uninstall() -> Result<SetupOutcome> {
     if !is_admin() {
         bail!("removing the Windows sandbox users requires an administrator");
     }
-    let _ = tool(
-        "netsh",
-        &[
-            "advfirewall",
-            "firewall",
-            "delete",
-            "rule",
-            &format!("name={FIREWALL_RULE}"),
-        ],
-    );
+    remove_offline_firewall();
     let _ = tool("net", &["user", OFFLINE_USER, "/delete"]);
     let _ = tool("net", &["user", ONLINE_USER, "/delete"]);
     let _ = fs::remove_dir_all(state_dir());
@@ -205,6 +175,41 @@ fn ensure_user(name: &str, password: &str) -> Result<()> {
     );
     let redacted = combined.replace(password, "***");
     bail!("net user failed for sandbox account {name}: {redacted}");
+}
+
+fn add_offline_firewall() -> Result<()> {
+    let user = ps_single_quote(OFFLINE_USER);
+    let rule = ps_single_quote(FIREWALL_RULE);
+    let script = format!(
+        "$sid = (New-Object System.Security.Principal.NTAccount({user})).Translate([System.Security.Principal.SecurityIdentifier]).Value; New-NetFirewallRule -Name {rule} -DisplayName {rule} -Direction Outbound -Action Block -Profile Any -LocalUser ('D:(A;;CC;;;' + $sid + ')') | Out-Null"
+    );
+    tool(
+        "powershell.exe",
+        &["-NoProfile", "-NonInteractive", "-Command", &script],
+    )
+}
+
+fn remove_offline_firewall() {
+    let rule = ps_single_quote(FIREWALL_RULE);
+    let script = format!("Remove-NetFirewallRule -Name {rule} -ErrorAction SilentlyContinue");
+    let _ = tool(
+        "powershell.exe",
+        &["-NoProfile", "-NonInteractive", "-Command", &script],
+    );
+    let _ = tool(
+        "netsh",
+        &[
+            "advfirewall",
+            "firewall",
+            "delete",
+            "rule",
+            &format!("name={FIREWALL_RULE}"),
+        ],
+    );
+}
+
+fn ps_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 fn grant_workspace(user: &str, workspace: &Path) -> Result<()> {

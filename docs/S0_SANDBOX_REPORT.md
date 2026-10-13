@@ -74,7 +74,7 @@ Windows `auto`（断网）：
 | `verter-sandbox setup`（Linux，AppArmor 不是当前 LSM） | 无 | 本机即是这种状态，命令成功并说明没有安装配置文件 |
 | `verter-sandbox setup --install`（Linux，AppArmor 是当前 LSM） | 一次 sudo | 写入 `/etc/apparmor.d/bwrap` 并加载。配置文件是本仓库自己的 user namespace 例外，不是从其他项目复制的 |
 | Windows AppContainer `exec` | 无 | 会创建名为 `verter.sandbox` 的 AppContainer 配置文件（已存在则复用） |
-| `verter-sandbox setup --install`（Windows） | 一次管理员 | `net user` 创建 `vsb-offline` / `vsb-online`（SAM 名称不超过 20 字符）。密码固定 14 个字符，避免 `net user` 因超过 LAN Manager 限制而交互询问。密码写在 `C:\ProgramData\verter-sandbox\`，`netsh` 阻断离线用户的出站流量 |
+| `verter-sandbox setup --install`（Windows） | 一次管理员 | `net user` 创建 `vsb-offline` / `vsb-online`（SAM 名称不超过 20 字符）。密码固定 14 个字符，避免 `net user` 因超过 LAN Manager 限制而交互询问。密码写在 `C:\ProgramData\verter-sandbox\`。用 `New-NetFirewallRule -LocalUser` 阻断离线用户的出站流量（Server 2025 的 `netsh` 不接受 `localuser=`） |
 | `verter-sandbox setup --uninstall`（Windows） | 管理员 | 删除防火墙规则、两个用户和密码目录 |
 | 普通 Windows `check` 任务 | 无 | 不设置 `VERTER_SANDBOX_ADMIN`，因此不创建用户 |
 
