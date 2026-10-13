@@ -92,7 +92,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     listener = setup_logging(config.log_level)
     try:
         asyncio.run(
-            serve(config, webui_dist=webui_dist, extra_platforms=extra),
+            serve(config, webui_dist=webui_dist, extra_platforms=extra, data_dir=data_dir),
             loop_factory=_loop_factory(),
         )
     except KeyboardInterrupt:

@@ -5,6 +5,7 @@ Method names follow AstrBot's message event API so plugins port with renames onl
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, Any, Literal
@@ -171,3 +172,32 @@ class MessageEvent:
 
     async def _send(self, message: MessageChain) -> None:
         raise NotImplementedError
+
+    async def wait_next(self, timeout: float = 60.0) -> MessageEvent | None:  # noqa: ASYNC109
+        """Wait for the next message in this conversation, without queueing it.
+
+        Returns None on timeout. The event bus delivers that message here instead
+        of running the pipeline for it.
+        """
+        from verter.core.runtime_state import current_runtime
+
+        runtime = current_runtime.get()
+        bus = None if runtime is None else runtime.bus
+        if bus is None:
+            raise RuntimeError("wait_next() requires a running event bus")
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[MessageEvent] = loop.create_future()
+
+        def intercept(event: MessageEvent) -> bool:
+            if not future.done():
+                future.set_result(event)
+            return True
+
+        origin = self.unified_msg_origin
+        bus.set_interceptor(origin, intercept)
+        try:
+            return await asyncio.wait_for(future, timeout)
+        except TimeoutError:
+            return None
+        finally:
+            bus.remove_interceptor(origin, intercept)

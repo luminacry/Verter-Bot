@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import signal
 import socket
 import sys
@@ -18,11 +19,14 @@ import uvicorn
 
 from verter.core.computer.runner import RunnerStatus, probe_runner, resolve_runner_binary
 from verter.core.config import PlatformConfig, VerterConfig
+from verter.core.db import Database
 from verter.core.event_bus import EventBus
 from verter.core.log import logger
 from verter.core.pipeline.context import HandlerSource, NullHandlerSource, PipelineContext
 from verter.core.pipeline.scheduler import PipelineScheduler
 from verter.core.platform.manager import PlatformManager
+from verter.core.runtime_state import RuntimeHandle, current_runtime
+from verter.core.star.plugin_manager import PluginManager
 from verter.dashboard.app import create_app
 from verter.dashboard.context import DashboardContext
 
@@ -66,16 +70,22 @@ class CoreLifecycle:
         webui_dist: Path | None = None,
         extra_platforms: Sequence[PlatformConfig] = (),
         handlers: HandlerSource | None = None,
+        data_dir: Path | None = None,
         request_shutdown: Callable[[], None] = _ignore_shutdown_request,
     ) -> None:
         self.config = config
         self._webui_dist = webui_dist
         self._extra_platforms = list(extra_platforms)
-        self._handlers = handlers or NullHandlerSource()
+        self._handlers = handlers
+        self._data_dir = data_dir
         self._request_shutdown = request_shutdown
         self.pipeline: PipelineScheduler | None = None
         self.event_bus: EventBus | None = None
         self.platforms: PlatformManager | None = None
+        self.plugins: PluginManager | None = None
+        self._db: Database | None = None
+        self._handle: RuntimeHandle | None = None
+        self._runtime_token: contextvars.Token[RuntimeHandle | None] | None = None
         self._server: _EmbeddedServer | None = None
         self._serve_task: asyncio.Task[None] | None = None
         self._port: int | None = None
@@ -106,10 +116,22 @@ class CoreLifecycle:
         bus, self.event_bus = self.event_bus, None
         if bus is not None:
             await bus.stop()
+        plugins, self.plugins = self.plugins, None
+        if plugins is not None:
+            await plugins.close()
+        db, self._db = self._db, None
+        if db is not None:
+            await db.close()
+        token, self._runtime_token = self._runtime_token, None
+        if token is not None:
+            current_runtime.reset(token)
         await self._stop_dashboard()
 
     async def _start_runtime(self) -> None:
-        pipeline = PipelineScheduler(PipelineContext(self.config, self._handlers))
+        source = await self._handler_source()
+        self._handle = RuntimeHandle()
+        self._runtime_token = current_runtime.set(self._handle)
+        pipeline = PipelineScheduler(PipelineContext(self.config, source))
         await pipeline.initialize()
         self.pipeline = pipeline
         runtime = self.config.runtime
@@ -127,6 +149,20 @@ class CoreLifecycle:
             request_shutdown=self._request_shutdown,
         )
         await self.platforms.start()
+        self._handle.platforms = self.platforms
+
+    async def _handler_source(self) -> HandlerSource:
+        if self._handlers is not None:
+            return self._handlers
+        if self._data_dir is None:
+            return NullHandlerSource()
+        db = Database(self._data_dir / "verter.db")
+        await db.connect()
+        self._db = db
+        plugins = PluginManager(self.config, db, self._data_dir)
+        await plugins.load()
+        self.plugins = plugins
+        return plugins
 
     async def _start_dashboard(self, runner: RunnerStatus) -> None:
         settings = self.config.dashboard
@@ -194,6 +230,7 @@ async def serve(
     *,
     webui_dist: Path | None = None,
     extra_platforms: Sequence[PlatformConfig] = (),
+    data_dir: Path | None = None,
     stop: asyncio.Event | None = None,
 ) -> None:
     """Run until ``stop`` is set, SIGTERM arrives, an adapter requests shutdown, or cancellation."""
@@ -205,6 +242,7 @@ async def serve(
         config,
         webui_dist=webui_dist,
         extra_platforms=extra_platforms,
+        data_dir=data_dir,
         request_shutdown=stop.set,
     )
     try:
