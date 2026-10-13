@@ -1,0 +1,101 @@
+import type { zhCN } from "./zh-CN"
+
+export const en: typeof zhCN = {
+  app: {
+    name: "Verter-Bot",
+    console: "Console",
+  },
+  nav: {
+    section: "Manage",
+    overview: "Overview",
+  },
+  auth: {
+    title: "Sign in to Verter-Bot",
+    description: "Use the administrator account created during setup",
+    username: "Username",
+    password: "Password",
+    submit: "Sign in",
+    hint: "Forgot the password? Run <cmd>verter init --force</cmd> to create a new account.",
+    logout: "Sign out",
+    administrator: "Administrator",
+    sessionExpired: "Your session has expired. Please sign in again.",
+    errors: {
+      usernameRequired: "Enter your username",
+      passwordRequired: "Enter your password",
+      invalidCredentials: "Incorrect username or password",
+      tooManyAttempts: "Too many attempts. Try again in {{seconds}} seconds.",
+      notInitialized: "No administrator account yet. Run verter init first.",
+      network: "Cannot reach the server. Check that it is running.",
+      unknown: "Sign-in failed. Please try again later.",
+    },
+  },
+  preferences: {
+    theme: "Change theme",
+    light: "Light",
+    dark: "Dark",
+    system: "System",
+    language: "Change language",
+  },
+  overview: {
+    title: "Overview",
+    description: "Runtime status, environment, and sandbox policy",
+    status: {
+      title: "Status",
+      description: "Current process",
+      version: "Version",
+      uptime: "Uptime",
+      startedAt: "Started",
+    },
+    environment: {
+      title: "Environment",
+      description: "Host and interpreter",
+      python: "Python",
+      system: "System",
+      platform: "Platform",
+    },
+    sandbox: {
+      title: "Sandbox",
+      description: "How agents may use the local sandbox",
+      status: "Status",
+      enabled: "Enabled",
+      disabled: "Disabled",
+      backend: "Backend",
+      allow: "Allowed callers",
+      network: "Network",
+      runner: "Runner",
+      runnerUnavailable: "Unavailable",
+      isolation: "Isolation backends",
+      noBackends: "No isolation backend is available on this platform yet",
+      available: "Available",
+      unavailable: "Unavailable",
+      backendValues: {
+        local: "Local",
+      },
+      allowValues: {
+        admins: "Admins only",
+        whitelist: "Whitelisted sessions",
+        all: "Everyone",
+      },
+      networkValues: {
+        deny: "Blocked",
+        allow: "Allowed",
+      },
+    },
+    error: {
+      title: "Couldn't load system information",
+      description: "Make sure the server is running, then try again.",
+      retry: "Retry",
+    },
+  },
+  duration: {
+    days: "{{count}}d",
+    hours: "{{count}}h",
+    minutes: "{{count}}m",
+    lessThanMinute: "less than a minute",
+  },
+  notFound: {
+    title: "Page not found",
+    description: "The page you are looking for doesn't exist or was removed.",
+    back: "Back to overview",
+  },
+}

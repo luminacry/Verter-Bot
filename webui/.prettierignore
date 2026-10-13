@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.pnpm-store/
+pnpm-lock.yaml
+src/components/ui/
+src/hooks/use-mobile.ts
+src/lib/api/schema.d.ts
+src/lib/api/openapi.json
