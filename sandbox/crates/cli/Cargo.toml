@@ -16,5 +16,9 @@ clap.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+anyhow.workspace = true
+verter-sandbox-linux = { path = "../linux" }
+
 [lints]
 workspace = true

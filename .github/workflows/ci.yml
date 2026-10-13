@@ -121,6 +121,33 @@ jobs:
           name: benchmark-results
           path: benchmarks/results/latest.json
 
+  sandbox-linux:
+    name: sandbox-linux (${{ matrix.userns }})
+    strategy:
+      fail-fast: false
+      matrix:
+        userns: [restricted, unrestricted]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sandbox
+      - name: Install bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Configure unprivileged user namespaces
+        run: |
+          if [ "${{ matrix.userns }}" = "restricted" ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+          else
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Sandbox tests
+        run: cargo test --workspace --locked --manifest-path sandbox/Cargo.toml
+
   deny:
     runs-on: ubuntu-24.04
     steps:
