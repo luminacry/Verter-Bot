@@ -178,10 +178,25 @@ fn user_exists(name: &str) -> bool {
 }
 
 fn ensure_user(name: &str, password: &str) -> Result<()> {
-    if user_exists(name) {
-        return tool("net", &["user", name, password]);
-    }
-    tool("net", &["user", name, password, "/add"])
+    let name_q = ps_single_quote(name);
+    let pass_q = ps_single_quote(password);
+    let script = if user_exists(name) {
+        format!(
+            "$p = ConvertTo-SecureString -String {pass_q} -AsPlainText -Force; Set-LocalUser -Name {name_q} -Password $p"
+        )
+    } else {
+        format!(
+            "$p = ConvertTo-SecureString -String {pass_q} -AsPlainText -Force; New-LocalUser -Name {name_q} -Password $p -AccountNeverExpires -PasswordNeverExpires -UserMayNotChangePassword | Out-Null"
+        )
+    };
+    tool(
+        "powershell.exe",
+        &["-NoProfile", "-NonInteractive", "-Command", &script],
+    )
+}
+
+fn ps_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 fn grant_workspace(user: &str, workspace: &Path) -> Result<()> {

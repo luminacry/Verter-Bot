@@ -260,8 +260,19 @@ fn memory_bomb_is_blocked(backend: &str) {
             "Set-Content -Path small.txt -Value ok".as_ref(),
         ],
     );
+    if !fs::read_to_string(workspace.join("small.txt"))
+        .unwrap_or_default()
+        .contains("ok")
+    {
+        eprintln!(
+            "memory bomb: powershell did not start under {backend} (exit {:?}); skipping the 800MB allocation. stderr {}",
+            small.status.code(),
+            small.stderr
+        );
+        return;
+    }
     let bomb = run(
-        limits(backend, &workspace, 30, 512, 32, false),
+        limits(backend, &workspace, 20, 256, 32, false),
         &[
             powershell.as_os_str(),
             "-NoProfile".as_ref(),
@@ -272,19 +283,9 @@ fn memory_bomb_is_blocked(backend: &str) {
     let allocated = fs::read_to_string(workspace.join("bomb.txt")).unwrap_or_default();
     assert!(
         !allocated.contains("allocated"),
-        "800MB allocation succeeded under a 512MB job limit\nstderr {}",
+        "800MB allocation succeeded under a 256MB job limit\nstderr {}",
         bomb.stderr
     );
-    if !fs::read_to_string(workspace.join("small.txt"))
-        .unwrap_or_default()
-        .contains("ok")
-    {
-        eprintln!(
-            "memory bomb: powershell did not start under {backend} (exit {:?}); allocation was not observed. stderr {}",
-            small.status.code(),
-            small.stderr
-        );
-    }
 }
 
 fn timeout_kills_the_tree(backend: &str) {
@@ -292,7 +293,7 @@ fn timeout_kills_the_tree(backend: &str) {
     write_bat(
         &workspace,
         "sleep.bat",
-        "@echo off\r\nfor /L %%i in (1,1,30) do (\r\n  echo tick>>ticks.txt\r\n  ping -n 2 127.0.0.1 >nul\r\n)\r\n",
+        "@echo off\r\nfor /L %%i in (1,1,30) do (\r\n  echo tick>>ticks.txt\r\n  for /L %%j in (1,1,400000) do rem\r\n)\r\n",
     );
     let started = std::time::Instant::now();
     let result = run_bat(backend, &workspace, "sleep.bat", 3, 512, 8);
