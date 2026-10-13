@@ -1,0 +1,15 @@
+[package]
+name = "verter-sandbox-protocol"
+description = "Wire protocol between Verter-Bot and verter-sandbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

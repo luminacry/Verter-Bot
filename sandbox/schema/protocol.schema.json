@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Protocol",
+  "description": "Root type that exports both message directions in one schema document.",
+  "type": "object",
+  "properties": {
+    "client": {
+      "description": "Client-to-runner messages.",
+      "$ref": "#/$defs/ClientMessage"
+    },
+    "server": {
+      "description": "Runner-to-client messages.",
+      "$ref": "#/$defs/ServerMessage"
+    }
+  },
+  "required": [
+    "client",
+    "server"
+  ],
+  "$defs": {
+    "BackendKind": {
+      "description": "Isolation backend identifiers.",
+      "oneOf": [
+        {
+          "description": "Linux namespaces via the `bwrap` executable.",
+          "type": "string",
+          "const": "bubblewrap"
+        }
+      ]
+    },
+    "BackendStatus": {
+      "description": "Availability of one isolation backend.",
+      "type": "object",
+      "properties": {
+        "available": {
+          "description": "Whether the backend can be used on this host.",
+          "type": "boolean"
+        },
+        "detail": {
+          "description": "Location of the backend or the reason it is unavailable.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Backend identifier.",
+          "$ref": "#/$defs/BackendKind"
+        }
+      },
+      "required": [
+        "kind",
+        "available",
+        "detail"
+      ]
+    },
+    "ClientMessage": {
+      "description": "Messages sent by the Verter-Bot core to the runner.",
+      "oneOf": [
+        {
+          "title": "Hello",
+          "description": "Handshake. Must be the first message on a connection.",
+          "type": "object",
+          "properties": {
+            "client": {
+              "description": "Client identifier, for example `verter/0.1.0`.",
+              "type": "string"
+            },
+            "protocol_version": {
+              "description": "Protocol version the client speaks.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "hello"
+            }
+          },
+          "required": [
+            "type",
+            "client",
+            "protocol_version"
+          ]
+        },
+        {
+          "title": "Ping",
+          "description": "Liveness check, answered with [`ServerMessage::Pong`].",
+          "type": "object",
+          "properties": {
+            "nonce": {
+              "description": "Opaque value echoed back in the reply.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "ping"
+            }
+          },
+          "required": [
+            "type",
+            "nonce"
+          ]
+        },
+        {
+          "title": "Shutdown",
+          "description": "Ask the runner to exit.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "shutdown"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "ErrorCode": {
+      "description": "Reasons a message can be rejected.",
+      "oneOf": [
+        {
+          "description": "The line was not a valid client message.",
+          "type": "string",
+          "const": "invalid_message"
+        },
+        {
+          "description": "A message other than `hello` or `shutdown` arrived before the handshake.",
+          "type": "string",
+          "const": "handshake_required"
+        },
+        {
+          "description": "The client's protocol version is not supported.",
+          "type": "string",
+          "const": "unsupported_protocol_version"
+        }
+      ]
+    },
+    "PlatformInfo": {
+      "description": "Host platform reported during the handshake.",
+      "type": "object",
+      "properties": {
+        "arch": {
+          "description": "CPU architecture, as in Rust's `std::env::consts::ARCH`.",
+          "type": "string"
+        },
+        "backends": {
+          "description": "Isolation backends known on this platform.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BackendStatus"
+          }
+        },
+        "os": {
+          "description": "Operating system, as in Rust's `std::env::consts::OS`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "os",
+        "arch",
+        "backends"
+      ]
+    },
+    "ServerMessage": {
+      "description": "Messages sent by the runner to the Verter-Bot core.",
+      "oneOf": [
+        {
+          "title": "HelloAck",
+          "description": "Successful handshake.",
+          "type": "object",
+          "properties": {
+            "platform": {
+              "description": "Host platform and isolation backends detected by the runner.",
+              "$ref": "#/$defs/PlatformInfo"
+            },
+            "protocol_version": {
+              "description": "Protocol version the runner speaks.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "server_version": {
+              "description": "Runner version.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "hello_ack"
+            }
+          },
+          "required": [
+            "type",
+            "server_version",
+            "protocol_version",
+            "platform"
+          ]
+        },
+        {
+          "title": "Pong",
+          "description": "Reply to [`ClientMessage::Ping`].",
+          "type": "object",
+          "properties": {
+            "nonce": {
+              "description": "The nonce from the matching ping.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "pong"
+            }
+          },
+          "required": [
+            "type",
+            "nonce"
+          ]
+        },
+        {
+          "title": "ErrorReply",
+          "description": "The previous message was rejected.",
+          "type": "object",
+          "properties": {
+            "code": {
+              "description": "Machine-readable error kind.",
+              "$ref": "#/$defs/ErrorCode"
+            },
+            "message": {
+              "description": "Human-readable description.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "error"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "message"
+          ]
+        }
+      ]
+    }
+  }
+}
