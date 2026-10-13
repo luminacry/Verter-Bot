@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,12 +83,94 @@ class ComputerConfig(_Strict):
         return self.allow == "whitelist" and session_id in self.whitelist
 
 
+class RateLimitSettings(_Strict):
+    """Per-session limit on messages that wake the bot."""
+
+    enable: bool = True
+    count: int = Field(default=30, ge=1)
+    window_s: float = Field(default=60.0, gt=0)
+    strategy: Literal["discard", "stall"] = "discard"
+
+
+class PlatformSettings(_Strict):
+    """Message handling shared by all platforms; key names follow AstrBot's platform_settings."""
+
+    friend_message_needs_wake_prefix: bool = False
+    ignore_bot_self_message: bool = True
+    ignore_at_all: bool = False
+    enable_id_white_list: bool = False
+    id_whitelist: list[str] = Field(default_factory=list[str])
+    wl_ignore_admin_on_group: bool = True
+    wl_ignore_admin_on_friend: bool = True
+    reply_prefix: str = ""
+    reply_with_mention: bool = False
+    reply_with_quote: bool = False
+    rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
+
+
+class ContentSafetyConfig(_Strict):
+    enable: bool = False
+    keywords: list[str] = Field(default_factory=list[str])
+    also_use_in_response: bool = True
+
+    @field_validator("keywords")
+    @classmethod
+    def _check_patterns(cls, value: list[str]) -> list[str]:
+        for pattern in value:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"invalid regular expression {pattern!r}: {exc}") from exc
+        return value
+
+
+class RuntimeConfig(_Strict):
+    max_pending_events: int = Field(default=10_000, ge=1)
+    workers: int = Field(default=64, ge=1, le=4096)
+    event_timeout_s: float = Field(default=300.0, ge=0, description="0 disables the timeout")
+
+
+class PlatformConfig(BaseModel):
+    """One adapter instance. Adapter-specific keys are validated by the adapter itself."""
+
+    model_config = ConfigDict(extra="allow", validate_assignment=True)
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    type: str = Field(min_length=1)
+    enable: bool = True
+
+    @property
+    def settings(self) -> dict[str, Any]:
+        return dict(self.model_extra or {})
+
+
 class VerterConfig(_Strict):
     config_version: Literal[1] = 1
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     admins_id: list[str] = Field(default_factory=list[str])
+    wake_prefix: list[str] = Field(default_factory=lambda: ["/"])
+    platform_settings: PlatformSettings = Field(default_factory=PlatformSettings)
+    content_safety: ContentSafetyConfig = Field(default_factory=ContentSafetyConfig)
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    platform: list[PlatformConfig] = Field(default_factory=list[PlatformConfig])
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     computer: ComputerConfig = Field(default_factory=ComputerConfig)
+
+    @field_validator("wake_prefix")
+    @classmethod
+    def _check_wake_prefix(cls, value: list[str]) -> list[str]:
+        if any(not prefix for prefix in value):
+            raise ValueError("wake prefixes must not be empty strings")
+        return value
+
+    @field_validator("platform")
+    @classmethod
+    def _check_unique_ids(cls, value: list[PlatformConfig]) -> list[PlatformConfig]:
+        ids = [p.id for p in value]
+        duplicates = sorted({i for i in ids if ids.count(i) > 1})
+        if duplicates:
+            raise ValueError(f"duplicate platform ids: {', '.join(duplicates)}")
+        return value
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,6 +10,7 @@ dependencies = [
     "pyjwt>=2.15.1",
     "pyyaml>=6.0.3",
     "uvicorn>=0.54.0",
+    "uvloop>=0.23.0 ; sys_platform != 'win32'",
 ]
 
 [project.scripts]
@@ -47,6 +48,9 @@ select = [
     "E", "W", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF", "C4", "PIE", "PT",
     "RET", "PTH", "S", "BLE", "T20", "TID", "PERF",
 ]
+
+# Chat-facing replies are written in Chinese with full-width punctuation.
+allowed-confusables = ["，", "：", "；", "（", "）", "！", "？"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106"]

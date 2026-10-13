@@ -15,6 +15,7 @@ from verter.core.config import (
     ENV_ADMIN_PASSWORD,
     ConfigError,
     InitResult,
+    PlatformConfig,
     initialize_data_dir,
     load_config,
     resolve_data_dir,
@@ -46,6 +47,11 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--host", help="dashboard bind address (overrides config)")
     run.add_argument("--port", type=int, help="dashboard port (overrides config)")
     run.add_argument("--webui-dist", help="directory with built WebUI assets")
+    run.add_argument(
+        "--console",
+        action="store_true",
+        help="chat with the bot in this terminal (adds a console platform)",
+    )
     run.set_defaults(handler=_cmd_run)
 
     doctor = commands.add_parser("doctor", help="check the environment and configuration")
@@ -82,17 +88,33 @@ def _cmd_run(args: argparse.Namespace) -> int:
     except (ConfigError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    extra = [PlatformConfig(id="console", type="console")] if args.console else []
     listener = setup_logging(config.log_level)
     try:
-        asyncio.run(serve(config, webui_dist=webui_dist))
+        asyncio.run(
+            serve(config, webui_dist=webui_dist, extra_platforms=extra),
+            loop_factory=_loop_factory(),
+        )
     except KeyboardInterrupt:
         pass
+    except ConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     except OSError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     finally:
         listener.stop()
     return 0
+
+
+def _loop_factory() -> Callable[[], asyncio.AbstractEventLoop] | None:
+    """uvloop where available; Windows keeps the default proactor loop."""
+    if sys.platform == "win32":
+        return None
+    import uvloop
+
+    return uvloop.new_event_loop
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:

@@ -9,6 +9,7 @@ from verter.core.config import (
     ENV_DATA_DIR,
     ComputerConfig,
     ConfigError,
+    PlatformConfig,
     VerterConfig,
     initialize_data_dir,
     load_config,
@@ -108,6 +109,24 @@ def test_resolve_data_dir_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setenv(ENV_DATA_DIR, str(tmp_path / "from-env"))
     assert resolve_data_dir() == (tmp_path / "from-env").resolve()
     assert resolve_data_dir(tmp_path / "explicit") == (tmp_path / "explicit").resolve()
+
+
+def test_runtime_settings_reject_bad_values() -> None:
+    with pytest.raises(ValidationError, match="wake prefixes"):
+        VerterConfig(wake_prefix=[""])
+    with pytest.raises(ValidationError, match="duplicate platform"):
+        VerterConfig.model_validate(
+            {"platform": [{"id": "a", "type": "console"}, {"id": "a", "type": "inmemory"}]}
+        )
+    with pytest.raises(ValidationError, match="regular expression"):
+        VerterConfig.model_validate({"content_safety": {"keywords": ["("]}})
+
+
+def test_platform_entry_keeps_adapter_settings() -> None:
+    entry = PlatformConfig.model_validate({"id": "c", "type": "console", "sender_id": "me"})
+    assert entry.settings == {"sender_id": "me"}
+    assert VerterConfig().runtime.workers == 64
+    assert VerterConfig().platform_settings.rate_limit.count == 30
 
 
 def test_initialize_with_explicit_password(tmp_path: Path) -> None:

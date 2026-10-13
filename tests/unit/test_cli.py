@@ -1,5 +1,6 @@
 import re
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +8,14 @@ import pytest
 
 from verter import __version__
 from verter.cli import main as cli
-from verter.core.config import CONFIG_FILENAME, ENV_ADMIN_PASSWORD, VerterConfig, load_config
+from verter.core.config import (
+    CONFIG_FILENAME,
+    ENV_ADMIN_PASSWORD,
+    ConfigError,
+    PlatformConfig,
+    VerterConfig,
+    load_config,
+)
 from verter.core.security import verify_password
 
 
@@ -68,9 +76,17 @@ class FakeServe:
     def __init__(self, error: BaseException | None = None) -> None:
         self.error = error
         self.calls: list[tuple[VerterConfig, Any]] = []
+        self.extra_platforms: list[PlatformConfig] = []
 
-    async def __call__(self, config: VerterConfig, *, webui_dist: Path | None = None) -> None:
+    async def __call__(
+        self,
+        config: VerterConfig,
+        *,
+        webui_dist: Path | None = None,
+        extra_platforms: Sequence[PlatformConfig] = (),
+    ) -> None:
         self.calls.append((config, webui_dist))
+        self.extra_platforms = list(extra_platforms)
         if self.error is not None:
             raise self.error
 
@@ -91,7 +107,8 @@ def test_run_initializes_on_first_start(
 
 @pytest.mark.usefixtures("restore_logging")
 @pytest.mark.parametrize(
-    ("error", "expected"), [(KeyboardInterrupt(), 0), (OSError("address in use"), 1)]
+    ("error", "expected"),
+    [(KeyboardInterrupt(), 0), (OSError("address in use"), 1), (ConfigError("bad"), 2)],
 )
 def test_run_exit_codes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: BaseException, expected: int
@@ -123,3 +140,14 @@ def test_run_rejects_invalid_config(tmp_path: Path, capsys: pytest.CaptureFixtur
 def test_config_file_is_private(tmp_path: Path) -> None:
     cli.main(["init", "--data-dir", str(tmp_path)])
     assert (tmp_path / CONFIG_FILENAME).stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.usefixtures("restore_logging")
+def test_run_console_flag_adds_a_console_platform(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = FakeServe()
+    monkeypatch.setattr(cli, "serve", fake)
+    cli.main(["init", "--data-dir", str(tmp_path)])
+    assert cli.main(["run", "--data-dir", str(tmp_path), "--console"]) == 0
+    assert [(p.id, p.type) for p in fake.extra_platforms] == [("console", "console")]
