@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>积分抽奖</title>
+  <style>
+    :root {
+      --bg0: #0b1020;
+      --bg1: #141b33;
+      --card: rgba(255, 255, 255, 0.06);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --text: #f4f6fb;
+      --muted: #9aa3b8;
+      --accent: #7c5cff;
+      --accent2: #22d3ee;
+      --gold: #fbbf24;
+      --danger: #f87171;
+      --ok: #34d399;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(124, 92, 255, 0.35), transparent 60%),
+        radial-gradient(900px 500px at 100% 0%, rgba(34, 211, 238, 0.22), transparent 55%),
+        radial-gradient(800px 500px at 50% 110%, rgba(251, 191, 36, 0.12), transparent 50%),
+        linear-gradient(160deg, var(--bg0), var(--bg1));
+      padding: 24px 16px 48px;
+      line-height: 1.5;
+    }
+
+    .wrap {
+      max-width: 440px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 22px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      color: var(--accent2);
+      background: rgba(34, 211, 238, 0.12);
+      border: 1px solid rgba(34, 211, 238, 0.25);
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 20px;
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+
+    .stats {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .stat {
+      flex: 1;
+      text-align: center;
+      padding: 14px 8px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .stat .n {
+      display: block;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--gold);
+    }
+
+    .stat .l {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .wheel-wrap {
+      position: relative;
+      width: 220px;
+      height: 220px;
+      margin: 8px auto 18px;
+    }
+
+    .wheel {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background:
+        conic-gradient(
+          from 0deg,
+          #7c5cff 0deg 45deg,
+          #22d3ee 45deg 90deg,
+          #fbbf24 90deg 135deg,
+          #f472b6 135deg 180deg,
+          #34d399 180deg 225deg,
+          #60a5fa 225deg 270deg,
+          #a78bfa 270deg 315deg,
+          #fb7185 315deg 360deg
+        );
+      border: 6px solid rgba(255, 255, 255, 0.2);
+      box-shadow:
+        0 0 0 8px rgba(124, 92, 255, 0.15),
+        inset 0 0 40px rgba(0, 0, 0, 0.25);
+      transition: transform 0.1s linear;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .wheel.spinning {
+      animation: spin 0.12s linear infinite;
+    }
+
+    .wheel::after {
+      content: "";
+      position: absolute;
+      inset: 28%;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #1a223f, #0f1528);
+      border: 3px solid rgba(255, 255, 255, 0.15);
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .wheel-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+      pointer-events: none;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      text-align: center;
+      padding: 0 40px;
+    }
+
+    .pointer {
+      position: absolute;
+      top: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 12px solid transparent;
+      border-right: 12px solid transparent;
+      border-top: 22px solid var(--gold);
+      filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4));
+      z-index: 3;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .hint {
+      font-size: 13px;
+      color: var(--gold);
+      background: rgba(251, 191, 36, 0.1);
+      border: 1px solid rgba(251, 191, 36, 0.25);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    input[type="email"] {
+      flex: 1;
+      min-width: 0;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(0, 0, 0, 0.28);
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+    }
+
+    input[type="email"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.25);
+    }
+
+    input[type="email"]::placeholder {
+      color: #6b7288;
+    }
+
+    button {
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      transition: transform 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .btn-draw {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      font-size: 16px;
+      color: #0b1020;
+      background: linear-gradient(135deg, var(--gold), #f59e0b 40%, #f472b6);
+      box-shadow: 0 10px 28px rgba(251, 191, 36, 0.28);
+    }
+
+    .btn-draw:hover:not(:disabled) {
+      box-shadow: 0 12px 32px rgba(251, 191, 36, 0.4);
+    }
+
+    .msg {
+      margin-top: 12px;
+      min-height: 22px;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .msg.error { color: var(--danger); }
+    .msg.info { color: var(--muted); }
+    .msg.ok { color: var(--ok); }
+
+    .result {
+      display: none;
+      text-align: center;
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 16px;
+      background: linear-gradient(145deg, rgba(124, 92, 255, 0.18), rgba(34, 211, 238, 0.12));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      animation: pop 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+    }
+
+    .result.show { display: block; }
+
+    .result .emoji { font-size: 28px; margin-bottom: 6px; }
+    .result .points {
+      font-size: 36px;
+      font-weight: 800;
+      color: var(--gold);
+      letter-spacing: 0.02em;
+    }
+    .result .points span { font-size: 16px; font-weight: 600; color: var(--muted); }
+    .result .desc { margin-top: 6px; color: var(--muted); font-size: 13px; }
+
+    @keyframes pop {
+      from { opacity: 0; transform: scale(0.86) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    h2 span {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .winners {
+      list-style: none;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+
+    .winners li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 14px;
+    }
+
+    .winners li:last-child { border-bottom: none; }
+
+    .winners .email {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .winners .pts {
+      color: var(--gold);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 18px 8px;
+    }
+
+    footer {
+      text-align: center;
+      color: #667085;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .rules {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .rules strong { color: #d1d5db; }
+
+    .config-error {
+      display: none;
+      text-align: center;
+      padding: 28px 16px;
+      border-radius: 16px;
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      color: var(--danger);
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .config-error.show { display: block; }
+
+    .loading-banner {
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="badge">POINTS LOTTERY</div>
+      <h1>积分抽奖</h1>
+      <p class="subtitle">共 10 个奖品 · 全员共用奖池 · 每邮箱限抽一次</p>
+    </header>
+
+    <div class="config-error" id="configError">奖池未配置</div>
+    <div class="loading-banner" id="loadingBanner">正在同步奖池…</div>
+
+    <section class="card" id="mainCard">
+      <div class="stats">
+        <div class="stat">
+          <span class="n" id="remainingCount">—</span>
+          <span class="l">剩余奖品</span>
+        </div>
+        <div class="stat">
+          <span class="n" id="claimedCount">—</span>
+          <span class="l">已抽取</span>
+        </div>
+      </div>
+
+      <div class="wheel-wrap">
+        <div class="pointer"></div>
+        <div class="wheel" id="wheel"></div>
+        <div class="wheel-center" id="wheelLabel">准备抽奖</div>
+      </div>
+
+      <div class="hint">⚠️ 请先填写有效邮箱后再抽奖；未留邮箱无法参与。每个邮箱只能抽取一次。所有人共用同一奖池。</div>
+
+      <label for="email">邮箱地址（必填）</label>
+      <div class="input-row">
+        <input
+          id="email"
+          type="email"
+          inputmode="email"
+          autocomplete="email"
+          placeholder="name@example.com"
+          maxlength="120"
+        />
+      </div>
+
+      <button class="btn-draw" id="drawBtn" type="button" disabled>开始抽奖</button>
+      <div class="msg info" id="msg">请输入邮箱后点击抽奖</div>
+
+      <div class="result" id="result">
+        <div class="emoji">🎉</div>
+        <div class="points" id="resultPoints">0 <span>积分</span></div>
+        <div class="desc" id="resultDesc">恭喜中奖！请留意邮箱通知。</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>中奖名单 <span id="winnersMeta">暂无</span></h2>
+      <ul class="winners" id="winnersList">
+        <li class="empty">还没有人抽中，来当第一位吧</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>奖池说明</h2>
+      <div class="rules">
+        <p>· 奖池共 <strong>10</strong> 个名额，全员共用。</p>
+        <p>· 固定保留：<strong>3000</strong>、<strong>2000</strong>、<strong>300</strong> 积分各 1 份。</p>
+        <p>· 其余 7 份为 1–2000 积分的随机整数（奖池首次生成时确定）。</p>
+        <p>· 每次抽取随机取出 1 份，抽完即止。</p>
+        <p>· 必须填写邮箱；同一邮箱仅可抽一次。</p>
+      </div>
+    </section>
+
+    <footer>奖池数据存于远程共享存储 · 长期不活跃可能过期</footer>
+  </div>
+
+  <script>
+    // Remote shared store (Pantry basket). PARENT WILL FILL getUrl / putUrl.
+    window.LOTTERY_STORE = {
+      getUrl: '', // PARENT WILL FILL
+      putUrl: '', // PARENT WILL FILL — same basket URL for Pantry POST replace
+      kind: 'pantry' // Pantry: GET basket, POST replace entire basket
+    };
+
+    (function () {
+      "use strict";
+
+      var FIXED_PRIZES = [3000, 2000, 300];
+      var TOTAL = 10;
+      var RANDOM_COUNT = TOTAL - FIXED_PRIZES.length;
+      var MAX_RETRIES = 3;
+      var UI_CACHE_KEY = "points_lottery_ui_cache_v1";
+
+      var store = window.LOTTERY_STORE || {};
+      var emailEl = document.getElementById("email");
+      var drawBtn = document.getElementById("drawBtn");
+      var msgEl = document.getElementById("msg");
+      var wheel = document.getElementById("wheel");
+      var wheelLabel = document.getElementById("wheelLabel");
+      var remainingCount = document.getElementById("remainingCount");
+      var claimedCount = document.getElementById("claimedCount");
+      var resultBox = document.getElementById("result");
+      var resultPoints = document.getElementById("resultPoints");
+      var resultDesc = document.getElementById("resultDesc");
+      var winnersList = document.getElementById("winnersList");
+      var winnersMeta = document.getElementById("winnersMeta");
+      var configError = document.getElementById("configError");
+      var loadingBanner = document.getElementById("loadingBanner");
+      var mainCard = document.getElementById("mainCard");
+
+      var spinning = false;
+      var currentState = null;
+      var configured = !!(store.getUrl && String(store.getUrl).trim());
+
+      function randInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+
+      function shuffle(arr) {
+        for (var j = arr.length - 1; j > 0; j--) {
+          var k = Math.floor(Math.random() * (j + 1));
+          var tmp = arr[j];
+          arr[j] = arr[k];
+          arr[k] = tmp;
+        }
+        return arr;
+      }
+
+      function createPool() {
+        var pool = FIXED_PRIZES.slice();
+        for (var i = 0; i < RANDOM_COUNT; i++) {
+          pool.push(randInt(1, 2000));
+        }
+        return shuffle(pool);
+      }
+
+      function freshState() {
+        return {
+          version: 1,
+          pool: createPool(),
+          winners: [],
+          claimedEmails: []
+        };
+      }
+
+      function normalizeState(data) {
+        if (!data || typeof data !== "object") return null;
+        var pool = Array.isArray(data.pool) ? data.pool.slice() : [];
+        var winners = Array.isArray(data.winners) ? data.winners.slice() : [];
+        var claimed = Array.isArray(data.claimedEmails)
+          ? data.claimedEmails.map(function (e) { return String(e).toLowerCase(); })
+          : [];
+        // Backfill claimedEmails from winners if missing
+        if (claimed.length === 0 && winners.length > 0) {
+          claimed = winners.map(function (w) {
+            return normalizeEmail(w && w.email);
+          }).filter(Boolean);
+        }
+        var version = typeof data.version === "number" ? data.version : 1;
+        return {
+          version: version,
+          pool: pool,
+          winners: winners,
+          claimedEmails: claimed
+        };
+      }
+
+      function normalizeEmail(email) {
+        return String(email || "").trim().toLowerCase();
+      }
+
+      function isValidEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+      }
+
+      function maskEmail(email) {
+        var parts = String(email).split("@");
+        if (parts.length !== 2) return "***";
+        var local = parts[0];
+        var domain = parts[1];
+        var maskedLocal = local.length <= 1 ? "*" : local.charAt(0) + "***";
+        var domainParts = domain.split(".");
+        var maskedDomain =
+          (domainParts[0] ? domainParts[0].charAt(0) : "x") +
+          "***." +
+          (domainParts.length > 1 ? domainParts[domainParts.length - 1] : "com");
+        return maskedLocal + "@" + maskedDomain;
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function setMsg(text, type) {
+        msgEl.textContent = text;
+        msgEl.className = "msg " + (type || "info");
+      }
+
+      function cacheUi(state) {
+        try {
+          localStorage.setItem(UI_CACHE_KEY, JSON.stringify({
+            remaining: state.pool.length,
+            claimed: state.winners.length,
+            winners: state.winners.slice(-20)
+          }));
+        } catch (e) { /* ignore */ }
+      }
+
+      function render(state) {
+        if (!state) return;
+        currentState = state;
+        cacheUi(state);
+
+        var left = state.pool.length;
+        var claimed = state.winners.length;
+
+        remainingCount.textContent = String(left);
+        claimedCount.textContent = String(claimed);
+
+        if (!configured) {
+          drawBtn.disabled = true;
+          return;
+        }
+
+        if (left === 0) {
+          wheelLabel.textContent = "奖品已抽完";
+          drawBtn.disabled = true;
+          drawBtn.textContent = "全部奖品已领完";
+          if (!spinning) setMsg("所有奖品已抽完，感谢参与！", "info");
+        } else if (!spinning) {
+          wheelLabel.textContent = "剩余 " + left + " 份";
+          drawBtn.disabled = false;
+          drawBtn.textContent = "开始抽奖";
+        }
+
+        if (state.winners.length === 0) {
+          winnersList.innerHTML = '<li class="empty">还没有人抽中，来当第一位吧</li>';
+          winnersMeta.textContent = "暂无";
+        } else {
+          winnersMeta.textContent = "共 " + state.winners.length + " 人";
+          var html = "";
+          for (var i = state.winners.length - 1; i >= 0; i--) {
+            var w = state.winners[i];
+            html +=
+              "<li><span class=\"email\">" +
+              escapeHtml(maskEmail(w.email)) +
+              "</span><span class=\"pts\">" +
+              w.points +
+              " 积分</span></li>";
+          }
+          winnersList.innerHTML = html;
+        }
+      }
+
+      function showResult(points) {
+        resultBox.classList.remove("show");
+        void resultBox.offsetWidth;
+        resultPoints.innerHTML = points + ' <span>积分</span>';
+        resultDesc.textContent = "恭喜获得 " + points + " 积分！结果已写入共享奖池（邮箱已脱敏展示）。";
+        resultBox.classList.add("show");
+      }
+
+      function getUrl() {
+        return String(store.getUrl || "").trim();
+      }
+
+      function putUrl() {
+        return String(store.putUrl || store.getUrl || "").trim();
+      }
+
+      async function remoteGet() {
+        var url = getUrl();
+        if (!url) throw new Error("奖池未配置");
+        var res = await fetch(url, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+          cache: "no-store"
+        });
+        if (res.status === 404) {
+          // Basket not created yet
+          return null;
+        }
+        if (!res.ok) {
+          throw new Error("读取奖池失败 (" + res.status + ")");
+        }
+        var text = await res.text();
+        if (!text || !String(text).trim()) return null;
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      async function remotePut(state) {
+        var url = putUrl();
+        if (!url) throw new Error("奖池未配置");
+        var res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify(state)
+        });
+        if (!res.ok) {
+          throw new Error("写入奖池失败 (" + res.status + ")");
+        }
+        return true;
+      }
+
+      function needsInit(state) {
+        if (!state) return true;
+        var poolEmpty = !state.pool || state.pool.length === 0;
+        var winnersEmpty = !state.winners || state.winners.length === 0;
+        return poolEmpty && winnersEmpty;
+      }
+
+      async function loadAndMaybeInit() {
+        var raw = await remoteGet();
+        var state = normalizeState(raw);
+        if (needsInit(state)) {
+          state = freshState();
+          await remotePut(state);
+          // Re-GET to confirm
+          try {
+            var again = normalizeState(await remoteGet());
+            if (again && !needsInit(again)) state = again;
+          } catch (e) { /* keep local init */ }
+        }
+        return state;
+      }
+
+      function emailClaimed(state, email) {
+        if (!state || !state.claimedEmails) return false;
+        return state.claimedEmails.indexOf(email) !== -1;
+      }
+
+      async function attemptDraw(email) {
+        var lastError = null;
+        for (var attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          var raw = await remoteGet();
+          var state = normalizeState(raw);
+          if (needsInit(state)) {
+            state = freshState();
+            await remotePut(state);
+            state = normalizeState(await remoteGet()) || state;
+          }
+
+          if (emailClaimed(state, email)) {
+            return { ok: false, reason: "claimed", state: state };
+          }
+          if (!state.pool || state.pool.length === 0) {
+            return { ok: false, reason: "empty", state: state };
+          }
+
+          var idx = Math.floor(Math.random() * state.pool.length);
+          var points = state.pool.splice(idx, 1)[0];
+          state.winners.push({
+            email: email,
+            points: points,
+            at: new Date().toISOString()
+          });
+          if (state.claimedEmails.indexOf(email) === -1) {
+            state.claimedEmails.push(email);
+          }
+          state.version = (typeof state.version === "number" ? state.version : 0) + 1;
+
+          try {
+            await remotePut(state);
+            // Verify our write stuck (optimistic concurrency)
+            var verify = normalizeState(await remoteGet());
+            if (verify && emailClaimed(verify, email)) {
+              // Find our points from winners
+              var won = points;
+              for (var i = verify.winners.length - 1; i >= 0; i--) {
+                if (normalizeEmail(verify.winners[i].email) === email) {
+                  won = verify.winners[i].points;
+                  break;
+                }
+              }
+              return { ok: true, points: won, state: verify };
+            }
+            // Someone else may have overwritten — retry
+            lastError = new Error("冲突，重试中");
+          } catch (err) {
+            lastError = err;
+            // GET again and retry
+          }
+        }
+        // Final refresh for UI
+        var finalState = null;
+        try {
+          finalState = normalizeState(await remoteGet());
+        } catch (e) { /* ignore */ }
+        if (finalState && emailClaimed(finalState, email)) {
+          var p = null;
+          for (var j = finalState.winners.length - 1; j >= 0; j--) {
+            if (normalizeEmail(finalState.winners[j].email) === email) {
+              p = finalState.winners[j].points;
+              break;
+            }
+          }
+          if (p != null) return { ok: true, points: p, state: finalState };
+          return { ok: false, reason: "claimed", state: finalState };
+        }
+        return {
+          ok: false,
+          reason: "conflict",
+          state: finalState,
+          error: lastError
+        };
+      }
+
+      async function draw() {
+        if (spinning || !configured) return;
+
+        var email = normalizeEmail(emailEl.value);
+        if (!email) {
+          setMsg("请先填写邮箱后再抽奖", "error");
+          emailEl.focus();
+          return;
+        }
+        if (!isValidEmail(email)) {
+          setMsg("邮箱格式不正确，请检查后重试", "error");
+          emailEl.focus();
+          return;
+        }
+
+        // Fast local check against last-known state
+        if (currentState && emailClaimed(currentState, email)) {
+          setMsg("该邮箱已经抽过奖了，每个邮箱只能抽一次", "error");
+          return;
+        }
+        if (currentState && currentState.pool.length === 0) {
+          setMsg("所有奖品已抽完，感谢参与！", "info");
+          render(currentState);
+          return;
+        }
+
+        spinning = true;
+        drawBtn.disabled = true;
+        drawBtn.textContent = "抽奖中…";
+        resultBox.classList.remove("show");
+        wheel.classList.add("spinning");
+        wheelLabel.textContent = "好运加载中";
+        setMsg("转盘转动中，正在同步奖池…", "info");
+
+        // Let the spin animation play a bit while we hit the network
+        var delay = 1600 + Math.floor(Math.random() * 700);
+
+        try {
+          var result = await Promise.all([
+            attemptDraw(email),
+            new Promise(function (r) { setTimeout(r, delay); })
+          ]).then(function (pair) { return pair[0]; });
+
+          spinning = false;
+          wheel.classList.remove("spinning");
+
+          if (result.state) render(result.state);
+
+          if (result.ok) {
+            wheelLabel.textContent = "+" + result.points;
+            setMsg("抽奖成功！", "ok");
+            showResult(result.points);
+            render(result.state);
+            return;
+          }
+
+          if (result.reason === "claimed") {
+            setMsg("该邮箱已经抽过奖了，每个邮箱只能抽一次", "error");
+          } else if (result.reason === "empty") {
+            setMsg("手慢了，奖品刚被抽完", "error");
+          } else {
+            setMsg("网络繁忙，请稍后重试", "error");
+          }
+          render(result.state || currentState);
+        } catch (err) {
+          spinning = false;
+          wheel.classList.remove("spinning");
+          setMsg("抽奖失败：" + (err && err.message ? err.message : "网络错误"), "error");
+          drawBtn.disabled = false;
+          drawBtn.textContent = "开始抽奖";
+          wheelLabel.textContent = "请重试";
+        }
+      }
+
+      async function handleReset() {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get("reset") !== "1") return false;
+        if (!configured) {
+          alert("奖池未配置，无法重置");
+          return true;
+        }
+        var ok = window.confirm(
+          "确认重置共享奖池？这将清空所有中奖记录并重新生成 10 个奖品。此操作仅供主办方使用。"
+        );
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+        }
+        if (!ok) return true;
+        try {
+          loadingBanner.style.display = "";
+          loadingBanner.textContent = "正在重置奖池…";
+          var state = freshState();
+          await remotePut(state);
+          render(state);
+          alert("共享奖池已重置");
+          setMsg("奖池已重置，可以开始抽奖", "ok");
+        } catch (err) {
+          alert("重置失败：" + (err && err.message ? err.message : "网络错误"));
+        }
+        return true;
+      }
+
+      async function boot() {
+        if (!configured) {
+          configError.classList.add("show");
+          configError.textContent = "奖池未配置";
+          loadingBanner.style.display = "none";
+          drawBtn.disabled = true;
+          setMsg("奖池未配置", "error");
+          wheelLabel.textContent = "未配置";
+          return;
+        }
+
+        configError.classList.remove("show");
+        loadingBanner.style.display = "";
+        loadingBanner.textContent = "正在同步奖池…";
+
+        try {
+          await handleReset();
+          var state = await loadAndMaybeInit();
+          loadingBanner.style.display = "none";
+          render(state);
+          setMsg("请输入邮箱后点击抽奖", "info");
+        } catch (err) {
+          loadingBanner.style.display = "none";
+          setMsg("无法连接奖池：" + (err && err.message ? err.message : "网络错误"), "error");
+          wheelLabel.textContent = "连接失败";
+          drawBtn.disabled = true;
+        }
+      }
+
+      drawBtn.addEventListener("click", draw);
+      emailEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          draw();
+        }
+      });
+
+      boot();
+    })();
+  </script>
+</body>
+</html>
