@@ -6,7 +6,7 @@
 
 ## 当前进度
 
-P0（工程基建与质量门禁）已完成。P1-1 已实现消息模型、EventBus、流水线和调试适配器。P1-2 已实现插件系统、HandlerIndex、内置指令和会话等待器。阶段计划见 [docs/P1_S0_PLAN.md](docs/P1_S0_PLAN.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
+P0（工程基建与质量门禁）已完成。P1-1 已实现消息模型、EventBus、流水线和调试适配器。P1-2 已实现插件系统、HandlerIndex、内置指令和会话等待器。P1-3 已实现运行指标、日志环形缓冲，以及 WebUI 概览页的实时指标和插件页。阶段计划见 [docs/P1_S0_PLAN.md](docs/P1_S0_PLAN.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
 
 | 组件 | 技术 | P0 已有内容 |
 |------|------|-------------|

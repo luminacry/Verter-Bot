@@ -24,6 +24,8 @@ import { $api } from "@/lib/api/client"
 import type { components } from "@/lib/api/schema"
 import { formatDateTime, formatDuration } from "@/lib/format"
 
+import { MetricsCard } from "./metrics-card"
+
 type SystemInfo = components["schemas"]["SystemInfo"]
 
 export function OverviewPage() {
@@ -199,6 +201,7 @@ function OverviewCards({ info }: { info: SystemInfo }) {
           </div>
         </CardContent>
       </Card>
+      <MetricsCard />
     </div>
   )
 }

@@ -7,6 +7,8 @@ import logging.handlers
 import queue
 import sys
 
+from verter.core.log_ring import RING, RingHandler
+
 logger = logging.getLogger("verter")
 
 _FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -25,7 +27,9 @@ def setup_logging(level: str = "INFO") -> logging.handlers.QueueListener:
     records: queue.SimpleQueue[logging.LogRecord] = queue.SimpleQueue()
     stream = logging.StreamHandler(sys.stderr)
     stream.setFormatter(logging.Formatter(_FORMAT, _DATE_FORMAT))
-    listener = logging.handlers.QueueListener(records, stream, respect_handler_level=True)
+    listener = logging.handlers.QueueListener(
+        records, stream, RingHandler(RING), respect_handler_level=True
+    )
     root = logging.getLogger()
     root.handlers[:] = [logging.handlers.QueueHandler(records)]
     root.setLevel(level)

@@ -35,6 +35,55 @@ export const SYSTEM_INFO = {
   },
 }
 
+export const RUNTIME_METRICS = {
+  received: 128,
+  intercepted: 2,
+  dropped: 0,
+  processed: 120,
+  failed: 1,
+  timed_out: 0,
+  pending: 3,
+  in_flight: 1,
+  latency: {
+    buckets_us: [50, 100, 250, 500, 1000, 2500, 10000, 50000, 250000],
+    counts: [100, 15, 4, 1, 0, 0, 0, 0, 0, 0],
+    total: 120,
+    sum_us: 4800,
+  },
+}
+
+export const PLUGINS = [
+  {
+    name: "builtin_commands",
+    author: "verter",
+    desc: "Help, session id, and plugin administration",
+    version: "1.0.0",
+    enabled: true,
+    error: null,
+    reserved: true,
+  },
+  {
+    name: "helloworld",
+    author: "verter",
+    desc: "Reply to /helloworld",
+    version: "1.0.0",
+    enabled: true,
+    error: null,
+    reserved: false,
+  },
+  {
+    name: "broken",
+    author: "t",
+    desc: "broken",
+    version: "1",
+    enabled: false,
+    error: "RuntimeError: import boom",
+    reserved: false,
+  },
+]
+
+export type PluginFixture = "ok" | "empty" | "error"
+
 /** Seeds theme and language before any page script runs. */
 export async function usePreferences(
   page: Page,
@@ -51,13 +100,51 @@ export async function usePreferences(
 }
 
 /** Serves deterministic API responses so screenshots never depend on the host. */
-export async function mockApi(page: Page, { signedIn }: { signedIn: boolean }) {
-  await page.route("**/api/auth/me", (route) =>
-    signedIn
-      ? route.fulfill({ json: { username: "admin" } })
-      : route.fulfill({ status: 401, json: { detail: "unauthorized" } })
+export async function mockApi(
+  page: Page,
+  { signedIn, plugins = "ok" }: { signedIn: boolean; plugins?: PluginFixture }
+) {
+  await page.route(
+    (url) => url.pathname === "/api/auth/me",
+    (route) =>
+      signedIn
+        ? route.fulfill({ json: { username: "admin" } })
+        : route.fulfill({ status: 401, json: { detail: "unauthorized" } })
   )
-  await page.route("**/api/system/info", (route) =>
-    route.fulfill({ json: SYSTEM_INFO })
+  await page.route(
+    (url) => url.pathname === "/api/system/info",
+    (route) => route.fulfill({ json: SYSTEM_INFO })
   )
+  await page.route(
+    (url) => url.pathname === "/api/metrics",
+    (route) => route.fulfill({ json: RUNTIME_METRICS })
+  )
+  await page.route(
+    (url) => url.pathname === "/api/plugins",
+    (route) => {
+      if (plugins === "error") {
+        return route.fulfill({ status: 500, json: { detail: "unavailable" } })
+      }
+      return route.fulfill({ json: plugins === "empty" ? [] : PLUGINS })
+    }
+  )
+  if (signedIn) {
+    await page.addInitScript((payload) => {
+      class StableEventSource {
+        onopen: ((event: Event) => void) | null = null
+        onmessage: ((event: MessageEvent<string>) => void) | null = null
+        onerror: ((event: Event) => void) | null = null
+        constructor() {
+          queueMicrotask(() => {
+            this.onopen?.(new Event("open"))
+            this.onmessage?.(new MessageEvent("message", { data: payload }))
+          })
+        }
+        close() {
+          return undefined
+        }
+      }
+      window.EventSource = StableEventSource as unknown as typeof EventSource
+    }, JSON.stringify(RUNTIME_METRICS))
+  }
 }
