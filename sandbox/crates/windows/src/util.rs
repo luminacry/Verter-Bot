@@ -227,15 +227,6 @@ impl Drop for AnonymousPipes {
     }
 }
 
-pub fn startup_with_stdio() -> STARTUPINFOW {
-    let mut startup = STARTUPINFOW {
-        cb: u32::try_from(size_of::<STARTUPINFOW>()).unwrap_or(0),
-        ..STARTUPINFOW::default()
-    };
-    StartupStdio::inherit().apply_to(&mut startup);
-    startup
-}
-
 fn std_handles() -> (HANDLE, HANDLE, HANDLE) {
     // SAFETY: `GetStdHandle` returns the process standard handles. `SetHandleInformation`
     // only sets the inherit bit on those handles so `CreateProcessW` can pass them on.
