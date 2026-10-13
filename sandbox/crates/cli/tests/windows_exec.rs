@@ -293,7 +293,7 @@ fn timeout_kills_the_tree(backend: &str) {
     write_bat(
         &workspace,
         "sleep.bat",
-        "@echo off\r\nfor /L %%i in (1,1,30) do (\r\n  echo tick>>ticks.txt\r\n  for /L %%j in (1,1,400000) do rem\r\n)\r\n",
+        "@echo off\r\n:loop\r\necho tick>>ticks.txt\r\nfor /L %%j in (1,1,200000) do rem\r\ngoto loop\r\n",
     );
     let started = std::time::Instant::now();
     let result = run_bat(backend, &workspace, "sleep.bat", 3, 512, 8);
@@ -302,12 +302,22 @@ fn timeout_kills_the_tree(backend: &str) {
         started.elapsed() < Duration::from_secs(20),
         "timeout did not return"
     );
-    let ticks = fs::read_to_string(workspace.join("ticks.txt")).unwrap_or_default();
-    let lines = ticks.lines().filter(|line| line.contains("tick")).count();
-    assert!(
-        lines < 15,
-        "process tree kept running after the timeout ({lines} ticks)"
+    let ticks = workspace.join("ticks.txt");
+    let first = tick_count(&ticks);
+    std::thread::sleep(Duration::from_millis(800));
+    let second = tick_count(&ticks);
+    assert_eq!(
+        first, second,
+        "process tree kept writing after the timeout ({first} then {second} ticks)"
     );
+}
+
+fn tick_count(path: &Path) -> usize {
+    fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| line.contains("tick"))
+        .count()
 }
 
 fn parent_env_is_cleared(backend: &str) {

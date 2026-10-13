@@ -74,11 +74,11 @@ Windows `auto`（断网）：
 | `verter-sandbox setup`（Linux，AppArmor 不是当前 LSM） | 无 | 本机即是这种状态，命令成功并说明没有安装配置文件 |
 | `verter-sandbox setup --install`（Linux，AppArmor 是当前 LSM） | 一次 sudo | 写入 `/etc/apparmor.d/bwrap` 并加载。配置文件是本仓库自己的 user namespace 例外，不是从其他项目复制的 |
 | Windows AppContainer `exec` | 无 | 会创建名为 `verter.sandbox` 的 AppContainer 配置文件（已存在则复用） |
-| `verter-sandbox setup --install`（Windows） | 一次管理员 | `New-LocalUser` 创建 `vsb-offline` / `vsb-online`（SAM 名称不超过 20 字符；不用 `net user`，避免密码超过 14 字符时的交互提示），密码写在 `C:\ProgramData\verter-sandbox\`，`netsh` 阻断离线用户的出站流量 |
+| `verter-sandbox setup --install`（Windows） | 一次管理员 | `net user` 创建 `vsb-offline` / `vsb-online`（SAM 名称不超过 20 字符）。密码长于 14 字符时 `net user` 会问 Y/N，setup 向 stdin 写入 `Y`。密码写在 `C:\ProgramData\verter-sandbox\`，`netsh` 阻断离线用户的出站流量 |
 | `verter-sandbox setup --uninstall`（Windows） | 管理员 | 删除防火墙规则、两个用户和密码目录 |
 | 普通 Windows `check` 任务 | 无 | 不设置 `VERTER_SANDBOX_ADMIN`，因此不创建用户 |
 
-密码会出现在 `powershell.exe` 的命令行参数里。这是本阶段接受的限制：错误信息不会打印参数，日志也不记录密码。后续如果进入正式后端，应改为不把密码放进进程命令行。
+密码会出现在 `net user` 的命令行参数里。这是本阶段接受的限制：失败时只报告账户名，不把 `net` 的输出写进错误信息。后续如果进入正式后端，应改为不把密码放进进程命令行。
 
 ## 6. 能力如何如实报告
 

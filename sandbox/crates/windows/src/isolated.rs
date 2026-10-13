@@ -1,6 +1,7 @@
 //! Admin-initialized local users. The offline user has an outbound firewall block.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -178,25 +179,26 @@ fn user_exists(name: &str) -> bool {
 }
 
 fn ensure_user(name: &str, password: &str) -> Result<()> {
-    let name_q = ps_single_quote(name);
-    let pass_q = ps_single_quote(password);
-    let script = if user_exists(name) {
-        format!(
-            "$p = ConvertTo-SecureString -String {pass_q} -AsPlainText -Force; Set-LocalUser -Name {name_q} -Password $p"
-        )
+    let mut command = Command::new("net");
+    if user_exists(name) {
+        command.args(["user", name, password]);
     } else {
-        format!(
-            "$p = ConvertTo-SecureString -String {pass_q} -AsPlainText -Force; New-LocalUser -Name {name_q} -Password $p -AccountNeverExpires -PasswordNeverExpires -UserMayNotChangePassword | Out-Null"
-        )
-    };
-    tool(
-        "powershell.exe",
-        &["-NoProfile", "-NonInteractive", "-Command", &script],
-    )
-}
-
-fn ps_single_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
+        command.args(["user", name, password, "/add"]);
+    }
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().context("spawn net user")?;
+    if let Some(mut stdin) = child.stdin.take() {
+        // `net user` asks Y/N when the password is longer than 14 characters (LAN Manager).
+        stdin.write_all(b"Y\n").context("answer net user prompt")?;
+    }
+    let output = child.wait_with_output().context("wait net user")?;
+    if output.status.success() {
+        return Ok(());
+    }
+    bail!("net user failed for sandbox account {name}");
 }
 
 fn grant_workspace(user: &str, workspace: &Path) -> Result<()> {
