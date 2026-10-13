@@ -1,7 +1,15 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 
 const BIN: &str = env!("CARGO_BIN_EXE_verter-sandbox");
+
+static LOCK: Mutex<()> = Mutex::new(());
+
+fn lock() -> std::sync::MutexGuard<'static, ()> {
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 #[test]
 fn version_flag_prints_package_version() {
@@ -24,6 +32,7 @@ fn schema_command_prints_committed_schema() {
 
 #[test]
 fn doctor_json_reports_host_platform() {
+    let _guard = lock();
     let output = Command::new(BIN)
         .args(["doctor", "--json"])
         .output()
@@ -36,6 +45,7 @@ fn doctor_json_reports_host_platform() {
 
 #[test]
 fn serve_speaks_ndjson_over_stdio() {
+    let _guard = lock();
     let mut child = Command::new(BIN)
         .arg("serve")
         .stdin(Stdio::piped())
@@ -70,6 +80,7 @@ fn serve_speaks_ndjson_over_stdio() {
 fn serve_exec_echo() {
     use std::fs;
 
+    let _guard = lock();
     let workspace = std::env::temp_dir().join(format!(
         "verter-sandbox-serve-echo-{}-{}",
         std::process::id(),
