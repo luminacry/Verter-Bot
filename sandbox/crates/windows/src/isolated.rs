@@ -198,7 +198,13 @@ fn ensure_user(name: &str, password: &str) -> Result<()> {
     if output.status.success() {
         return Ok(());
     }
-    bail!("net user failed for sandbox account {name}");
+    let combined = format!(
+        "{} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let redacted = combined.replace(password, "***");
+    bail!("net user failed for sandbox account {name}: {redacted}");
 }
 
 fn grant_workspace(user: &str, workspace: &Path) -> Result<()> {
@@ -215,7 +221,8 @@ fn grant_workspace(user: &str, workspace: &Path) -> Result<()> {
 fn password_or_create(path: &Path) -> Result<String> {
     if let Ok(existing) = fs::read_to_string(path) {
         let existing = existing.trim().to_owned();
-        if !existing.is_empty() {
+        // `net user` prompts on passwords longer than 14 characters; keep stored secrets in that bound.
+        if existing.len() == 14 {
             return Ok(existing);
         }
     }
@@ -229,19 +236,20 @@ fn new_password() -> Result<String> {
         .args([
             "-NoProfile",
             "-Command",
-            "[guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')",
+            "[guid]::NewGuid().ToString('N').Substring(0,10)",
         ])
         .output()
         .context("generate a sandbox password")?;
     if !output.status.success() {
         bail!("powershell could not generate a password");
     }
-    let password = String::from_utf8(output.stdout).context("password was not utf-8")?;
-    let password = format!("{}Aa1!", password.trim());
-    if password.len() < 16 {
+    let core = String::from_utf8(output.stdout).context("password was not utf-8")?;
+    let core = core.trim();
+    if core.len() < 10 {
         bail!("generated password was too short");
     }
-    Ok(password)
+    // `A` + 10 hex + `a1!` = 14 characters, within the LAN Manager prompt limit, with upper, lower, digit, and symbol.
+    Ok(format!("A{}a1!", &core[..10]))
 }
 
 fn state_dir() -> PathBuf {
@@ -279,5 +287,13 @@ mod tests {
     fn sam_account_names_fit_the_twenty_character_limit() {
         assert!(super::OFFLINE_USER.len() <= 20);
         assert!(super::ONLINE_USER.len() <= 20);
+    }
+
+    #[test]
+    fn generated_password_fits_the_lan_manager_limit() {
+        let password = super::new_password().expect("generate");
+        assert_eq!(password.len(), 14);
+        assert!(password.starts_with('A'));
+        assert!(password.ends_with("a1!"));
     }
 }
