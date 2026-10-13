@@ -66,6 +66,7 @@ async def test_unknown_api_paths_stay_json_404(web: AsyncClient) -> None:
 def test_resolve_webui_dist(dist: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(ENV_WEBUI_DIST, raising=False)
     monkeypatch.setattr(app_module, "PACKAGED_WEBUI", tmp_path / "not-built")
+    monkeypatch.setattr(app_module, "SOURCE_WEBUI", tmp_path / "not-built-either")
     assert resolve_webui_dist() is None
     assert resolve_webui_dist(dist) == dist.resolve()
     monkeypatch.setenv(ENV_WEBUI_DIST, str(dist))
@@ -73,5 +74,7 @@ def test_resolve_webui_dist(dist: Path, tmp_path: Path, monkeypatch: pytest.Monk
     with pytest.raises(ConfigError, match=r"index\.html"):
         resolve_webui_dist(tmp_path / "missing")
     monkeypatch.delenv(ENV_WEBUI_DIST)
+    monkeypatch.setattr(app_module, "SOURCE_WEBUI", dist)
+    assert resolve_webui_dist() == dist
     monkeypatch.setattr(app_module, "PACKAGED_WEBUI", dist)
     assert resolve_webui_dist() == dist

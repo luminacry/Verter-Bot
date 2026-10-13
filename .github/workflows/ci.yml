@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUST_TOOLCHAIN: 1.99.0
+  PLAYWRIGHT_VERSION: 1.64.0
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: webui/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sandbox
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just setup
+      - run: just check
+
+  python-313:
+    name: pytest py3.13 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sandbox
+      - run: cargo build --locked --manifest-path sandbox/Cargo.toml
+      - run: uv run --frozen pytest --cov
+
+  e2e:
+    name: e2e (Playwright image)
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: webui/package.json
+      - run: uv sync --frozen --no-dev
+      - run: pnpm --dir webui install --frozen-lockfile
+      - name: Playwright package matches the container image
+        working-directory: webui
+        run: |
+          installed=$(node -p "require('@playwright/test/package.json').version")
+          test "$installed" = "$PLAYWRIGHT_VERSION" || {
+            echo "@playwright/test is $installed but the image is $PLAYWRIGHT_VERSION"; exit 1; }
+      - run: pnpm --dir webui build
+      - run: pnpm --dir webui e2e
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            webui/playwright-report
+            webui/test-results
+          retention-days: 7
+
+  bench:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv run --frozen python -m benchmarks.run
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-results
+          path: benchmarks/results/latest.json
+
+  deny:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: sandbox/Cargo.toml

@@ -21,6 +21,7 @@ from verter.dashboard.system import build_system_router
 
 ENV_WEBUI_DIST = "VERTER_WEBUI_DIST"
 PACKAGED_WEBUI = Path(__file__).parent / "static"
+SOURCE_WEBUI = Path(__file__).resolve().parents[2] / "webui" / "dist"
 
 _IMMUTABLE = "public, max-age=31536000, immutable"
 _NO_CACHE = "no-cache"
@@ -98,7 +99,8 @@ def openapi_schema() -> dict[str, Any]:
 
 
 def resolve_webui_dist(explicit: str | Path | None = None) -> Path | None:
-    """Find built WebUI assets: explicit path, ``VERTER_WEBUI_DIST``, or the packaged copy.
+    """Find built WebUI assets: explicit path, ``VERTER_WEBUI_DIST``, the packaged copy,
+    or ``webui/dist`` in a source checkout.
 
     Raises:
         ConfigError: If an explicitly requested directory has no ``index.html``.
@@ -109,8 +111,9 @@ def resolve_webui_dist(explicit: str | Path | None = None) -> Path | None:
         if not (path / "index.html").is_file():
             raise ConfigError(f"WebUI directory {path} does not contain index.html")
         return path
-    if (PACKAGED_WEBUI / "index.html").is_file():
-        return PACKAGED_WEBUI
+    for candidate in (PACKAGED_WEBUI, SOURCE_WEBUI):
+        if (candidate / "index.html").is_file():
+            return candidate
     return None
 
 
