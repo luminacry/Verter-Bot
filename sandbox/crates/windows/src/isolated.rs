@@ -155,10 +155,18 @@ fn user_exists(name: &str) -> bool {
 }
 
 /// Sets or creates a local user. The password is written on stdin, never argv.
+///
+/// Build `SecureString` with `AppendChar` instead of `ConvertTo-SecureString`: the
+/// `Microsoft.PowerShell.Security` module does not autoload under `-NoProfile` on
+/// GitHub `windows-2025`.
 const SET_PASSWORD_SCRIPT: &str = concat!(
+    "$ErrorActionPreference = 'Stop'; ",
     "$user = $env:VSB_USER; ",
     "$pass = [Console]::In.ReadLine(); ",
-    "$secure = ConvertTo-SecureString $pass -AsPlainText -Force; ",
+    "if (-not $pass) { throw 'empty password on stdin' }; ",
+    "$secure = New-Object System.Security.SecureString; ",
+    "foreach ($ch in $pass.ToCharArray()) { [void]$secure.AppendChar($ch) }; ",
+    "$secure.MakeReadOnly(); ",
     "if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) { ",
     "  Set-LocalUser -Name $user -Password $secure ",
     "} else { ",
