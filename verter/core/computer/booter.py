@@ -15,6 +15,7 @@ from verter.core.computer.runner import (
     resolve_runner_binary,
 )
 from verter.core.config import ComputerConfig
+from verter.core.db import Database
 from verter.core.log import logger
 
 
@@ -36,7 +37,12 @@ class ComputerBooter:
         self._data_dir = data_dir
         self._binary = binary
         self._client: SandboxClient | None = None
+        self._db: Database | None = None
         self._status = RunnerStatus(available=False, error="sandbox has not been started")
+
+    def bind_database(self, db: Database) -> None:
+        """Attach SQLite so later ``exec`` calls are written to the audit table."""
+        self._db = db
 
     @property
     def status(self) -> RunnerStatus:
@@ -103,6 +109,7 @@ class ComputerBooter:
         *,
         session_id: str,
         is_admin: bool,
+        initiator: str = "",
     ) -> ExecResult:
         """Run ``command`` if the session is allowed.
 
@@ -110,23 +117,97 @@ class ComputerBooter:
             SandboxDeniedError: If the configured policy rejects the caller.
             RunnerError: If the runner is down or isolation refuses the command.
         """
+        who = initiator or session_id
+        encoded = " ".join(command)
         if not self._config.allows(is_admin=is_admin, session_id=session_id):
-            raise SandboxDeniedError(
-                f"sandbox not allowed for session {session_id!r} (allow={self._config.allow})"
+            error = f"sandbox not allowed for session {session_id!r} (allow={self._config.allow})"
+            await self._audit(
+                session_id=session_id,
+                initiator=who,
+                command=encoded,
+                allowed=False,
+                error=error,
             )
+            raise SandboxDeniedError(error)
         client = self._client
         if client is None or not self._status.available:
-            raise RunnerError(self._status.error or "sandbox is not running")
+            error = self._status.error or "sandbox is not running"
+            await self._audit(
+                session_id=session_id,
+                initiator=who,
+                command=encoded,
+                allowed=True,
+                error=error,
+            )
+            raise RunnerError(error)
         limits = self._config.limits
-        return await client.exec(
-            command,
-            workspace=self.workspace(session_id),
-            backend=self._backend(),
-            network=self._config.network == "allow",
-            timeout_ms=limits.timeout_s * 1000,
-            memory_bytes=limits.memory_mb * 1024 * 1024,
-            nproc=limits.max_procs,
-            output_limit=limits.output_kb * 1024,
+        try:
+            result = await client.exec(
+                command,
+                workspace=self.workspace(session_id),
+                backend=self._backend(),
+                network=self._config.network == "allow",
+                timeout_ms=limits.timeout_s * 1000,
+                memory_bytes=limits.memory_mb * 1024 * 1024,
+                nproc=limits.max_procs,
+                output_limit=limits.output_kb * 1024,
+            )
+        except RunnerError as exc:
+            await self._audit(
+                session_id=session_id,
+                initiator=who,
+                command=encoded,
+                allowed=True,
+                error=str(exc),
+            )
+            raise
+        output = result.stdout.decode("utf-8", errors="replace")
+        cap = limits.output_kb * 1024
+        if len(output) > cap:
+            output = output[:cap]
+        await self._audit(
+            session_id=session_id,
+            initiator=who,
+            command=encoded,
+            allowed=True,
+            exit_code=result.exit_code,
+            timed_out=result.timed_out,
+            backend=result.backend,
+            wall_ms=result.wall_ms,
+            truncated=result.truncated,
+            output=output,
+        )
+        return result
+
+    async def _audit(
+        self,
+        *,
+        session_id: str,
+        initiator: str,
+        command: str,
+        allowed: bool,
+        exit_code: int | None = None,
+        timed_out: bool | None = None,
+        backend: str | None = None,
+        wall_ms: int | None = None,
+        truncated: bool = False,
+        output: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        if self._db is None:
+            return
+        await self._db.record_sandbox_audit(
+            session_id=session_id,
+            initiator=initiator,
+            command=command,
+            allowed=allowed,
+            exit_code=exit_code,
+            timed_out=timed_out,
+            backend=backend,
+            wall_ms=wall_ms,
+            truncated=truncated,
+            output=output,
+            error=error,
         )
 
     def _backend(self) -> ExecBackend:

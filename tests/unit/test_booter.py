@@ -6,6 +6,7 @@ import pytest
 from verter.core.computer.booter import ComputerBooter, SandboxDeniedError
 from verter.core.computer.runner import RunnerError
 from verter.core.config import ComputerConfig
+from verter.core.db import Database
 
 
 def test_workspace_uses_session_hash(tmp_path: Path) -> None:
@@ -18,10 +19,26 @@ def test_workspace_uses_session_hash(tmp_path: Path) -> None:
 
 async def test_allows_denial_does_not_need_a_runner(tmp_path: Path) -> None:
     policy = ComputerConfig(allow="whitelist", whitelist=["ok:session"])
+    db = Database(tmp_path / "verter.db")
+    await db.connect()
     booter = ComputerBooter(policy, tmp_path)
-    with pytest.raises(SandboxDeniedError, match="not allowed"):
-        await booter.exec(["echo", "no"], session_id="other:session", is_admin=False)
-    assert not (tmp_path / "workspaces").exists()
+    booter.bind_database(db)
+    try:
+        with pytest.raises(SandboxDeniedError, match="not allowed"):
+            await booter.exec(
+                ["echo", "no"],
+                session_id="other:session",
+                is_admin=False,
+                initiator="eve",
+            )
+        assert not (tmp_path / "workspaces").exists()
+        rows = await db.list_sandbox_audit()
+        assert len(rows) == 1
+        assert rows[0].allowed is False
+        assert rows[0].initiator == "eve"
+        assert rows[0].command == "echo no"
+    finally:
+        await db.close()
 
 
 async def test_exec_without_start_is_an_error(tmp_path: Path) -> None:

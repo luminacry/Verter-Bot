@@ -67,4 +67,34 @@ for (const theme of THEMES) {
     await expect(page.getByTestId("plugins-error")).toBeVisible()
     expect(await seriousViolations(page)).toEqual([])
   })
+
+  test(`sandbox page has no serious a11y violations (${theme})`, async ({
+    page,
+  }) => {
+    await usePreferences(page, "zh-CN", theme)
+    await mockApi(page, { signedIn: true })
+    await page.goto("/sandbox")
+    await expect(page.getByTestId("sandbox-page")).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+  })
+
+  test(`sandbox none state has no serious a11y violations (${theme})`, async ({
+    page,
+  }) => {
+    await usePreferences(page, "en", theme)
+    await mockApi(page, { signedIn: true, sandbox: "none" })
+    await page.goto("/sandbox")
+    await expect(page.getByTestId("sandbox-not-isolated")).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+  })
+
+  test(`sandbox error state has no serious a11y violations (${theme})`, async ({
+    page,
+  }) => {
+    await usePreferences(page, "en", theme)
+    await mockApi(page, { signedIn: true, sandbox: "error" })
+    await page.goto("/sandbox")
+    await expect(page.getByTestId("sandbox-error")).toBeVisible()
+    expect(await seriousViolations(page)).toEqual([])
+  })
 }

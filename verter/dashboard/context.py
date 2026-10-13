@@ -6,8 +6,10 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from verter.core.computer.booter import ComputerBooter
 from verter.core.computer.runner import RunnerStatus
 from verter.core.config import VerterConfig
+from verter.core.db import Database
 from verter.core.event_bus import EventBus
 from verter.core.log import logger
 from verter.core.log_ring import RING, LogRing
@@ -26,6 +28,8 @@ class DashboardContext:
     login_limiter: LoginRateLimiter = field(default_factory=LoginRateLimiter)
     bus: EventBus | None = None
     plugins: PluginControl | None = None
+    computer: ComputerBooter | None = None
+    db: Database | None = None
     logs: LogRing = field(default_factory=lambda: RING)
 
     @classmethod

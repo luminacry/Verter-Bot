@@ -155,6 +155,8 @@ class CoreLifecycle:
         )
         await self.platforms.start()
         self._handle.platforms = self.platforms
+        if self.computer is not None and self._db is not None:
+            self.computer.bind_database(self._db)
 
     async def _handler_source(self) -> HandlerSource:
         if self._handlers is not None:
@@ -177,6 +179,8 @@ class CoreLifecycle:
         dashboard = DashboardContext.create(self.config, runner)
         dashboard.bus = self.event_bus
         dashboard.plugins = self.plugins
+        dashboard.db = self._db
+        dashboard.computer = self.computer
         app = create_app(dashboard, webui_dist=self._webui_dist)
         sock = bind_tcp(settings.host, settings.port)
         self._port = sock.getsockname()[1]

@@ -41,6 +41,8 @@ fn doctor_json_reports_host_platform() {
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["os"], std::env::consts::OS);
     assert!(report["backends"].is_array());
+    assert!(report["auto"].is_string());
+    assert_eq!(report["policy"], "exec refuses to run without isolation");
 }
 
 #[test]

@@ -82,7 +82,64 @@ export const PLUGINS = [
   },
 ]
 
+export const SANDBOX_DOCTOR = {
+  os: "linux",
+  arch: "x86_64",
+  backends: [
+    { kind: "bubblewrap", available: true, detail: "/usr/bin/bwrap" },
+    { kind: "landlock", available: true, detail: "enforced" },
+  ],
+  auto: "bubblewrap",
+  policy: "exec refuses to run without isolation",
+  can_execute: true,
+  error: null,
+}
+
+export const SANDBOX_DOCTOR_NONE = {
+  ...SANDBOX_DOCTOR,
+  auto: "none",
+  can_execute: false,
+  backends: [
+    { kind: "bubblewrap", available: false, detail: "userns denied" },
+    { kind: "landlock", available: false, detail: "not enforced" },
+  ],
+}
+
+export const SANDBOX_AUDIT = [
+  {
+    id: 2,
+    created_at: "2026-10-13T02:00:00Z",
+    session_id: "qq:GroupMessage:1",
+    initiator: "111",
+    command: "echo ok",
+    allowed: true,
+    exit_code: 0,
+    timed_out: false,
+    backend: "bubblewrap",
+    wall_ms: 12,
+    truncated: false,
+    output: "ok\n",
+    error: null,
+  },
+  {
+    id: 1,
+    created_at: "2026-10-13T01:00:00Z",
+    session_id: "qq:GroupMessage:9",
+    initiator: "999",
+    command: "rm -rf /",
+    allowed: false,
+    exit_code: null,
+    timed_out: null,
+    backend: null,
+    wall_ms: null,
+    truncated: false,
+    output: null,
+    error: "sandbox not allowed",
+  },
+]
+
 export type PluginFixture = "ok" | "empty" | "error"
+export type SandboxFixture = "ok" | "empty" | "error" | "none"
 
 /** Seeds theme and language before any page script runs. */
 export async function usePreferences(
@@ -102,7 +159,11 @@ export async function usePreferences(
 /** Serves deterministic API responses so screenshots never depend on the host. */
 export async function mockApi(
   page: Page,
-  { signedIn, plugins = "ok" }: { signedIn: boolean; plugins?: PluginFixture }
+  {
+    signedIn,
+    plugins = "ok",
+    sandbox = "ok",
+  }: { signedIn: boolean; plugins?: PluginFixture; sandbox?: SandboxFixture }
 ) {
   await page.route(
     (url) => url.pathname === "/api/auth/me",
@@ -126,6 +187,26 @@ export async function mockApi(
         return route.fulfill({ status: 500, json: { detail: "unavailable" } })
       }
       return route.fulfill({ json: plugins === "empty" ? [] : PLUGINS })
+    }
+  )
+  await page.route(
+    (url) => url.pathname === "/api/sandbox/doctor",
+    (route) => {
+      if (sandbox === "error") {
+        return route.fulfill({ status: 500, json: { detail: "unavailable" } })
+      }
+      return route.fulfill({
+        json: sandbox === "none" ? SANDBOX_DOCTOR_NONE : SANDBOX_DOCTOR,
+      })
+    }
+  )
+  await page.route(
+    (url) => url.pathname === "/api/sandbox/audit",
+    (route) => {
+      if (sandbox === "error") {
+        return route.fulfill({ status: 500, json: { detail: "unavailable" } })
+      }
+      return route.fulfill({ json: sandbox === "empty" ? [] : SANDBOX_AUDIT })
     }
   )
   if (signedIn) {

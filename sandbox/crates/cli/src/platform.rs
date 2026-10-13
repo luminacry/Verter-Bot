@@ -1,6 +1,56 @@
 //! Host platform and isolation backend detection.
 
+use serde::Serialize;
 use verter_sandbox_protocol::{BackendKind, BackendStatus, PlatformInfo};
+
+/// Machine-readable `verter-sandbox doctor --json` document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DoctorDocument {
+    /// Operating system, as in Rust's `std::env::consts::OS`.
+    pub os: String,
+    /// CPU architecture.
+    pub arch: String,
+    /// Isolation backends known on this platform.
+    pub backends: Vec<BackendStatus>,
+    /// Backend `auto` will use, or `none` when exec must refuse.
+    pub auto: String,
+    /// States that exec will not run without isolation.
+    pub policy: String,
+}
+
+/// Platform info plus the effective `auto` backend for the dashboard.
+#[must_use]
+pub fn doctor_document() -> DoctorDocument {
+    let info = detect();
+    DoctorDocument {
+        os: info.os,
+        arch: info.arch,
+        backends: info.backends,
+        auto: auto_name(),
+        policy: "exec refuses to run without isolation".to_owned(),
+    }
+}
+
+fn auto_name() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        match verter_sandbox_linux::host_report().auto_backend {
+            Some(backend) => backend.as_str().to_owned(),
+            None => "none".to_owned(),
+        }
+    }
+    #[cfg(windows)]
+    {
+        match verter_sandbox_windows::host_report().auto_backend {
+            Some(backend) => backend.as_str().to_owned(),
+            None => "none".to_owned(),
+        }
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        "none".to_owned()
+    }
+}
 
 pub fn detect() -> PlatformInfo {
     PlatformInfo {
