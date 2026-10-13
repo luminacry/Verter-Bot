@@ -1,0 +1,82 @@
+[project]
+name = "verter-bot"
+dynamic = ["version"]
+description = "High-performance multi-platform LLM bot framework with an AstrBot-like architecture"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143.0",
+    "pydantic>=2.14.1",
+    "pyjwt>=2.15.1",
+    "pyyaml>=6.0.3",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+verter = "verter.cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "verter/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["verter"]
+
+[dependency-groups]
+dev = [
+    "datamodel-code-generator>=0.83.0",
+    "httpx>=0.28.1",
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.0",
+    "types-pyyaml>=6.0.12.20260906",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["sandbox", "webui", "verter/core/computer/protocol.py"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF", "C4", "PIE", "PT",
+    "RET", "PTH", "S", "BLE", "T20", "TID", "PERF",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+"verter/cli/**" = ["T201"]
+"scripts/**" = ["T201", "S603", "S607"]
+"benchmarks/**" = ["T201", "S311"]
+
+[tool.pyright]
+include = ["verter", "tests", "scripts", "benchmarks"]
+exclude = ["**/__pycache__", "sandbox/target", "webui"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+strict = ["verter"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["verter"]
+branch = true
+omit = ["verter/core/computer/protocol.py", "verter/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "@overload"]
