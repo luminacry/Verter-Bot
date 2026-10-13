@@ -469,9 +469,9 @@
   <script>
     // Remote shared store (Pantry basket). PARENT WILL FILL getUrl / putUrl.
     window.LOTTERY_STORE = {
-      getUrl: '', // PARENT WILL FILL
-      putUrl: '', // PARENT WILL FILL — same basket URL for Pantry POST replace
-      kind: 'pantry' // Pantry: GET basket, POST replace entire basket
+      getUrl: 'https://getpantry.cloud/apiv1/pantry/d305a8fe-068e-41ee-bfc5-61ee117d8b64/basket/lottery',
+      putUrl: 'https://getpantry.cloud/apiv1/pantry/d305a8fe-068e-41ee-bfc5-61ee117d8b64/basket/lottery',
+      kind: 'pantry'
     };
 
     (function () {
@@ -542,6 +542,9 @@
         var claimed = Array.isArray(data.claimedEmails)
           ? data.claimedEmails.map(function (e) { return String(e).toLowerCase(); })
           : [];
+        if (claimed.length === 0 && Array.isArray(data.emails)) {
+          claimed = data.emails.map(function (e) { return normalizeEmail(e); }).filter(Boolean);
+        }
         // Backfill claimedEmails from winners if missing
         if (claimed.length === 0 && winners.length > 0) {
           claimed = winners.map(function (w) {
