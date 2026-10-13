@@ -6,7 +6,7 @@
 
 ## 当前进度
 
-P0、P1、S0 已合入 main。P1 覆盖消息流水线、插件系统和 WebUI 观测；S0 锁定 Linux / Windows 沙箱默认方案（无隔离时拒绝执行）。P2-1 已实现 OneBot v11（反向 / 正向 WebSocket）。阶段计划见 [docs/P2_P4_PLAN.md](docs/P2_P4_PLAN.md)，平台配置见 [docs/platforms.md](docs/platforms.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
+P0、P1、S0 已合入 main。P1 覆盖消息流水线、插件系统和 WebUI 观测；S0 锁定 Linux / Windows 沙箱默认方案（无隔离时拒绝执行）。P2-1 已实现 OneBot v11（反向 / 正向 WebSocket）。P2-2 已实现 Telegram 长轮询。阶段计划见 [docs/P2_P4_PLAN.md](docs/P2_P4_PLAN.md)，平台配置见 [docs/platforms.md](docs/platforms.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
 
 | 组件 | 技术 | P0 已有内容 |
 |------|------|-------------|

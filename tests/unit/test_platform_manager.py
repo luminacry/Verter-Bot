@@ -150,6 +150,8 @@ async def test_terminate_errors_do_not_block_shutdown(monkeypatch: pytest.Monkey
 def test_builtin_adapters_resolve_lazily() -> None:
     assert get_platform_adapter("inmemory").__name__ == "InMemoryPlatform"
     assert get_platform_adapter("console").__name__ == "ConsolePlatform"
+    assert get_platform_adapter("onebot_v11").__name__ == "OneBotV11Platform"
+    assert get_platform_adapter("telegram").__name__ == "TelegramPlatform"
 
 
 def test_registering_the_same_adapter_twice_is_idempotent() -> None:
