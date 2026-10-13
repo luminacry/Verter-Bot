@@ -15,6 +15,7 @@ from typing import Protocol
 
 from verter.core.log import logger
 from verter.core.platform.message_event import MessageEvent
+from verter.core.runtime_state import RuntimeHandle, current_runtime
 
 type SessionInterceptor = Callable[[MessageEvent], bool]
 """Receives events for one conversation before they are queued; True consumes the event."""
@@ -100,6 +101,13 @@ class EventBus:
 
     async def start(self) -> None:
         self._accepting = True
+        # Workers copy the current context. The handle is mutable, so the platform
+        # manager can be attached after the workers have already started.
+        handle = current_runtime.get()
+        if handle is None:
+            handle = RuntimeHandle()
+            current_runtime.set(handle)
+        handle.bus = self
         self._workers = [
             asyncio.create_task(self._work(), name=f"event-worker-{i}")
             for i in range(self._worker_count)

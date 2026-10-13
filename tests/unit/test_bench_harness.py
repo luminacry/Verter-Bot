@@ -42,4 +42,4 @@ def test_best_ns_per_op_uses_the_fastest_run() -> None:
 def test_dispatch_simulation_reports_budgeted_metrics() -> None:
     results = bench_dispatch_sim.run(scale=0.01)
     assert set(results) >= {b.metric for b in bench_dispatch_sim.BUDGETS}
-    assert results["scan_over_indexed_1000"] > 1
+    assert 0 < results["indexed_growth_100_to_5000"] < 5

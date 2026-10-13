@@ -1,0 +1,4 @@
+name: builtin_commands
+author: verter
+desc: Help, session id, and plugin administration
+version: 1.0.0

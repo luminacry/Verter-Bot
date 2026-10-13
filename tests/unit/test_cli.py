@@ -84,9 +84,11 @@ class FakeServe:
         *,
         webui_dist: Path | None = None,
         extra_platforms: Sequence[PlatformConfig] = (),
+        data_dir: Path | None = None,
     ) -> None:
         self.calls.append((config, webui_dist))
         self.extra_platforms = list(extra_platforms)
+        self.data_dir = data_dir
         if self.error is not None:
             raise self.error
 
