@@ -76,9 +76,10 @@ pub fn spawn_suspended(
     workspace: &std::path::Path,
 ) -> Result<Spawned> {
     let token = restricted_token()?;
+    let app = crate::util::application_name(command);
     let mut cmdline = command_line(command);
     let env = environment_block(workspace);
-    let cwd = crate::util::wide_os(workspace.as_os_str());
+    let cwd = crate::util::wide_os(crate::util::native_path(workspace).as_os_str());
     let startup = startup_with_stdio();
     let mut info = PROCESS_INFORMATION::default();
     let flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW;
@@ -87,7 +88,7 @@ pub fn spawn_suspended(
         CreateProcessWithTokenW(
             token.0,
             0,
-            null(),
+            app.as_ptr(),
             cmdline.as_mut_ptr(),
             flags,
             env.as_ptr().cast(),

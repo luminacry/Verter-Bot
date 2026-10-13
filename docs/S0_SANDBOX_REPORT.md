@@ -56,11 +56,11 @@ Landlock 路径对 `/usr`、`/etc`、`/dev`、`/proc` 只读，对工作区可�
 
 Windows `auto`（断网）：
 
-1. 离线用户 `verter-sandbox-offline` 已由 `setup --install` 创建，且密码文件存在。
+1. 离线用户 `vsb-offline` 已由 `setup --install` 创建，且密码文件存在。
 2. 否则，若 `verter.sandbox` 这个 AppContainer 配置文件可用，则用它。不授予网络能力。
 3. 否则拒绝。
 
-允许网络时，第 1 步改为在线用户 `verter-sandbox-online`（没有出站防火墙规则）。受限令牌不参与 `auto`。
+允许网络时，第 1 步改为在线用户 `vsb-online`（没有出站防火墙规则）。受限令牌不参与 `auto`。账户名控制在 20 个字符以内，以符合 SAM 限制。
 
 显式 `--backend restricted` 在断网时拒绝。隔离用户未初始化时，`--backend isolated` 拒绝。
 
@@ -74,7 +74,7 @@ Windows `auto`（断网）：
 | `verter-sandbox setup`（Linux，AppArmor 不是当前 LSM） | 无 | 本机即是这种状态，命令成功并说明没有安装配置文件 |
 | `verter-sandbox setup --install`（Linux，AppArmor 是当前 LSM） | 一次 sudo | 写入 `/etc/apparmor.d/bwrap` 并加载。配置文件是本仓库自己的 user namespace 例外，不是从其他项目复制的 |
 | Windows AppContainer `exec` | 无 | 会创建名为 `verter.sandbox` 的 AppContainer 配置文件（已存在则复用） |
-| `verter-sandbox setup --install`（Windows） | 一次管理员 | `net user` 创建两个本地用户，密码写在 `C:\ProgramData\verter-sandbox\`，`netsh` 阻断离线用户的出站流量 |
+| `verter-sandbox setup --install`（Windows） | 一次管理员 | `net user` 创建 `vsb-offline` / `vsb-online`（SAM 名称不超过 20 字符），密码写在 `C:\ProgramData\verter-sandbox\`，`netsh` 阻断离线用户的出站流量 |
 | `verter-sandbox setup --uninstall`（Windows） | 管理员 | 删除防火墙规则、两个用户和密码目录 |
 | 普通 Windows `check` 任务 | 无 | 不设置 `VERTER_SANDBOX_ADMIN`，因此不创建用户 |
 

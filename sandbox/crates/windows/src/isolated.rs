@@ -12,10 +12,12 @@ use windows_sys::Win32::System::Threading::{
 };
 
 use crate::appcontainer::Spawned;
-use crate::util::{command_line, environment_block, last_error, null, startup_with_stdio};
+use crate::util::{command_line, environment_block, last_error, startup_with_stdio};
 
-pub const OFFLINE_USER: &str = "verter-sandbox-offline";
-pub const ONLINE_USER: &str = "verter-sandbox-online";
+/// SAM account names are limited to 20 characters (`LM20_UNLEN`).
+pub const OFFLINE_USER: &str = "vsb-offline";
+pub const ONLINE_USER: &str = "vsb-online";
+const FIREWALL_RULE: &str = "verter-sandbox-offline";
 
 /// What `setup` did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,7 +55,7 @@ pub fn setup(install: bool) -> Result<SetupOutcome> {
             "firewall",
             "delete",
             "rule",
-            "name=verter-sandbox-offline",
+            &format!("name={FIREWALL_RULE}"),
         ],
     );
     tool(
@@ -63,7 +65,7 @@ pub fn setup(install: bool) -> Result<SetupOutcome> {
             "firewall",
             "add",
             "rule",
-            "name=verter-sandbox-offline",
+            &format!("name={FIREWALL_RULE}"),
             "dir=out",
             "action=block",
             &format!("localuser={OFFLINE_USER}"),
@@ -88,7 +90,7 @@ pub fn uninstall() -> Result<SetupOutcome> {
             "firewall",
             "delete",
             "rule",
-            "name=verter-sandbox-offline",
+            &format!("name={FIREWALL_RULE}"),
         ],
     );
     let _ = tool("net", &["user", OFFLINE_USER, "/delete"]);
@@ -126,9 +128,10 @@ pub fn spawn_suspended(
         .with_context(|| format!("read {password_file}"))?;
     let password = password.trim().to_owned();
     grant_workspace(user, workspace)?;
+    let app = crate::util::application_name(command);
     let mut cmdline = command_line(command);
     let env = environment_block(workspace);
-    let cwd = crate::util::wide_os(workspace.as_os_str());
+    let cwd = crate::util::wide_os(crate::util::native_path(workspace).as_os_str());
     let user_w = crate::util::wide(user);
     let domain = crate::util::wide(".");
     let password_w = crate::util::wide(&password);
@@ -143,7 +146,7 @@ pub fn spawn_suspended(
             domain.as_ptr(),
             password_w.as_ptr(),
             LOGON_WITH_PROFILE,
-            null(),
+            app.as_ptr(),
             cmdline.as_mut_ptr(),
             flags,
             env.as_ptr().cast(),
@@ -245,6 +248,19 @@ fn tool(program: &str, args: &[&str]) -> Result<()> {
     if output.status.success() {
         return Ok(());
     }
-    // Arguments can include a generated password. Keep them out of the error text.
-    bail!("{program} failed with status {}", output.status)
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    bail!(
+        "{program} failed ({status}): {stdout} {stderr}",
+        status = output.status
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn sam_account_names_fit_the_twenty_character_limit() {
+        assert!(super::OFFLINE_USER.len() <= 20);
+        assert!(super::ONLINE_USER.len() <= 20);
+    }
 }

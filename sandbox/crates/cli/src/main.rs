@@ -415,7 +415,7 @@ fn setup_command(install: bool, uninstall: bool) -> ExitCode {
         }
         Ok(verter_sandbox_windows::SetupOutcome::Installed) => {
             println!(
-                "Created verter-sandbox-offline and verter-sandbox-online, and blocked outbound traffic for the offline user."
+                "Created vsb-offline and vsb-online, and blocked outbound traffic for the offline user."
             );
             ExitCode::SUCCESS
         }

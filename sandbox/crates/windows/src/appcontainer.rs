@@ -168,6 +168,7 @@ pub fn spawn_suspended(
         }
         bail!(last_error("UpdateProcThreadAttribute"));
     }
+    let app = crate::util::application_name(command);
     let mut cmdline = command_line(command);
     let env = environment_block(workspace);
     let cwd = wide_os_cwd(workspace);
@@ -176,12 +177,13 @@ pub fn spawn_suspended(
         | CREATE_UNICODE_ENVIRONMENT
         | CREATE_NO_WINDOW
         | EXTENDED_STARTUPINFO_PRESENT;
-    // SAFETY: `cmdline`, `env`, `cwd`, `startup`, and `caps` are live for the call.
+    // SAFETY: `app`, `cmdline`, `env`, `cwd`, `startup`, and `caps` are live for the call.
     // `startup` begins with `STARTUPINFOW`, which is the layout `CreateProcessW` reads when
-    // `EXTENDED_STARTUPINFO_PRESENT` is set.
+    // `EXTENDED_STARTUPINFO_PRESENT` is set. `capability` and `attributes` own the SID
+    // bytes that `caps` points at.
     let created = unsafe {
         CreateProcessW(
-            null(),
+            app.as_ptr(),
             cmdline.as_mut_ptr(),
             null(),
             null(),
@@ -193,6 +195,7 @@ pub fn spawn_suspended(
             &raw mut info,
         )
     };
+    drop((capability, attributes, env, cwd, app, cmdline));
     // SAFETY: `list` was initialized and must be deleted even when creation fails.
     unsafe {
         DeleteProcThreadAttributeList(list);
@@ -227,5 +230,5 @@ fn internet_client() -> Result<Vec<u8>> {
 }
 
 fn wide_os_cwd(path: &std::path::Path) -> Vec<u16> {
-    crate::util::wide_os(path.as_os_str())
+    crate::util::wide_os(crate::util::native_path(path).as_os_str())
 }

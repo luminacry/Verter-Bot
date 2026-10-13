@@ -2,7 +2,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::OsStrExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::ptr;
 
 use anyhow::Error;
@@ -31,7 +31,15 @@ pub fn wide_os(text: &OsStr) -> Vec<u16> {
 pub fn last_error(action: &str) -> Error {
     // SAFETY: `GetLastError` reads this thread's last-error slot and has no other precondition.
     let code = unsafe { GetLastError() };
-    anyhow::anyhow!("{action} failed: Win32 error {code}")
+    let hint = match code {
+        203 => " (ERROR_ENVVAR_NOT_FOUND)",
+        _ => "",
+    };
+    anyhow::anyhow!("{action} failed: Win32 error {code}{hint}")
+}
+
+pub fn application_name(command: &[OsString]) -> Vec<u16> {
+    command.first().map_or_else(|| wide(""), |exe| wide_os(exe))
 }
 
 pub fn command_line(args: &[OsString]) -> Vec<u16> {
@@ -72,17 +80,44 @@ fn quote_arg(arg: &OsStr) -> String {
     out
 }
 
+/// Strip the `\\?\` prefix so environment values and `CreateProcess` cwd stay Win32 paths.
+#[must_use]
+pub fn native_path(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(text.as_ref()))
+}
+
 pub fn environment_block(workspace: &Path) -> Vec<u16> {
     let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_owned());
+    let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| {
+        system_root
+            .get(..2)
+            .filter(|drive| drive.ends_with(':'))
+            .unwrap_or("C:")
+            .to_owned()
+    });
     let path = format!("{system_root}\\System32;{system_root}");
-    let workspace = workspace.display().to_string();
+    let workspace = native_path(workspace).to_string_lossy().into_owned();
+    let home_path = workspace.get(2..).unwrap_or(workspace.as_str());
     let entries = [
+        format!("ALLUSERSPROFILE={system_drive}\\ProgramData"),
+        format!("APPDATA={workspace}"),
+        format!("ComSpec={system_root}\\System32\\cmd.exe"),
+        format!("HOMEDRIVE={system_drive}"),
+        format!("HOMEPATH={home_path}"),
+        format!("LOCALAPPDATA={workspace}"),
+        "OS=Windows_NT".to_owned(),
         format!("PATH={path}"),
         "PATHEXT=.COM;.EXE;.BAT;.CMD".to_owned(),
+        format!("ProgramData={system_drive}\\ProgramData"),
+        format!("SystemDrive={system_drive}"),
         format!("SystemRoot={system_root}"),
         format!("TEMP={workspace}"),
         format!("TMP={workspace}"),
+        "USERDOMAIN=SANDBOX".to_owned(),
+        "USERNAME=sandbox".to_owned(),
         format!("USERPROFILE={workspace}"),
+        format!("windir={system_root}"),
     ];
     let mut block = Vec::new();
     for entry in &entries {
