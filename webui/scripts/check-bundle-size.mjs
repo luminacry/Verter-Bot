@@ -14,6 +14,10 @@ const SCREENS = {
     "src/components/app-shell.tsx",
     "src/features/overview/overview-page.tsx",
   ],
+  plugins: [
+    "src/components/app-shell.tsx",
+    "src/features/plugins/plugins-page.tsx",
+  ],
 }
 
 const dist = join(import.meta.dirname, "..", "dist")

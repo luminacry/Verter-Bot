@@ -169,7 +169,10 @@ class CoreLifecycle:
         if not settings.enable:
             logger.info("Dashboard disabled in config")
             return
-        app = create_app(DashboardContext.create(self.config, runner), webui_dist=self._webui_dist)
+        dashboard = DashboardContext.create(self.config, runner)
+        dashboard.bus = self.event_bus
+        dashboard.plugins = self.plugins
+        app = create_app(dashboard, webui_dist=self._webui_dist)
         sock = bind_tcp(settings.host, settings.port)
         self._port = sock.getsockname()[1]
         server = _EmbeddedServer(

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from verter.core.log import logger
+from verter.core.metrics import LatencyHistogram
 from verter.core.platform.message_event import MessageEvent
 from verter.core.runtime_state import RuntimeHandle, current_runtime
 
@@ -56,6 +57,7 @@ class EventBus:
         self._in_flight = 0
         self._last_drop_log = 0.0
         self.stats = EventBusStats()
+        self.latency = LatencyHistogram()
 
     @property
     def pending(self) -> int:
@@ -137,6 +139,7 @@ class EventBus:
         while True:
             event = await queue.get()
             self._in_flight += 1
+            started = time.perf_counter()
             deadline = asyncio.timeout(self._timeout)
             try:
                 async with deadline:
@@ -156,5 +159,6 @@ class EventBus:
                         "Pipeline failed for an event from %s", event.unified_msg_origin
                     )
             finally:
+                self.latency.observe(time.perf_counter() - started)
                 self._in_flight -= 1
                 queue.task_done()

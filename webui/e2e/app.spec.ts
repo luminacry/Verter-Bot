@@ -18,6 +18,7 @@ test("signs in, shows the overview, keeps the session, and signs out", async ({
   await expect(page.getByRole("heading", { name: "概览" })).toBeVisible()
   await expect(page.getByText("仅管理员")).toBeVisible()
   await expect(page.getByText("禁止")).toBeVisible()
+  await expect(page.getByTestId("metrics-status")).toHaveText("实时")
 
   await page.reload()
   await expect(page.getByRole("heading", { name: "概览" })).toBeVisible()

@@ -182,6 +182,324 @@
           }
         ]
       }
+    },
+    "/api/metrics": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Metrics",
+        "operationId": "metrics_api_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeMetrics"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      }
+    },
+    "/api/metrics/stream": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Metrics Stream",
+        "operationId": "metrics_stream_api_metrics_stream_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Logs",
+        "operationId": "logs_api_logs_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LogRecordModel"
+                  },
+                  "title": "Response Logs Api Logs Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Plugins",
+        "operationId": "plugins_api_plugins_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginModel"
+                  },
+                  "type": "array",
+                  "title": "Response Plugins Api Plugins Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      }
+    },
+    "/api/plugins/{name}/enabled": {
+      "post": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Set Enabled",
+        "operationId": "set_enabled_api_plugins__name__enabled_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginEnabledBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginAction"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/reload": {
+      "post": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Reload Plugin",
+        "operationId": "reload_plugin_api_plugins__name__reload_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginAction"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -224,6 +542,68 @@
         "type": "object",
         "title": "HealthResponse"
       },
+      "LatencyModel": {
+        "properties": {
+          "buckets_us": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Buckets Us"
+          },
+          "counts": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Counts"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "sum_us": {
+            "type": "number",
+            "title": "Sum Us"
+          }
+        },
+        "type": "object",
+        "required": [
+          "buckets_us",
+          "counts",
+          "total",
+          "sum_us"
+        ],
+        "title": "LatencyModel"
+      },
+      "LogRecordModel": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "logger": {
+            "type": "string",
+            "title": "Logger"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "level",
+          "logger",
+          "message"
+        ],
+        "title": "LogRecordModel"
+      },
       "LoginRequest": {
         "properties": {
           "username": {
@@ -245,6 +625,139 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "PluginAction": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "message"
+        ],
+        "title": "PluginAction"
+      },
+      "PluginEnabledBody": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "PluginEnabledBody"
+      },
+      "PluginModel": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "desc": {
+            "type": "string",
+            "title": "Desc"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "reserved": {
+            "type": "boolean",
+            "title": "Reserved"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "author",
+          "desc",
+          "version",
+          "enabled",
+          "error",
+          "reserved"
+        ],
+        "title": "PluginModel"
+      },
+      "RuntimeMetrics": {
+        "properties": {
+          "received": {
+            "type": "integer",
+            "title": "Received"
+          },
+          "intercepted": {
+            "type": "integer",
+            "title": "Intercepted"
+          },
+          "dropped": {
+            "type": "integer",
+            "title": "Dropped"
+          },
+          "processed": {
+            "type": "integer",
+            "title": "Processed"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "timed_out": {
+            "type": "integer",
+            "title": "Timed Out"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "in_flight": {
+            "type": "integer",
+            "title": "In Flight"
+          },
+          "latency": {
+            "$ref": "#/components/schemas/LatencyModel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "received",
+          "intercepted",
+          "dropped",
+          "processed",
+          "failed",
+          "timed_out",
+          "pending",
+          "in_flight",
+          "latency"
+        ],
+        "title": "RuntimeMetrics"
       },
       "SandboxBackend": {
         "properties": {
