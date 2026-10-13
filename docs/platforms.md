@@ -55,3 +55,23 @@ platform:
 | 其它 | `Unknown`（保留原生字段） |
 
 群聊仍遵守唤醒前缀：没有 `@` 或指令前缀的消息不会进插件。
+
+## Telegram
+
+适配器类型：`telegram`。只做 Bot API 长轮询，不做 webhook。
+
+```yaml
+platform:
+  - id: tg_main
+    type: telegram
+    enable: true
+    token: "ENV:TELEGRAM_BOT_TOKEN"
+```
+
+可选 `api_base`（默认 `https://api.telegram.org`）和 `poll_timeout_s`（默认 25）。`getUpdates` 失败会退避重试，不会把进程打崩。
+
+发送间隔按 [Bots FAQ](https://core.telegram.org/bots/faq#my-bot-is-hitting-limits-how-do-i-avoid-this)：私聊约 1 秒，群聊约 3 秒（对应每分钟 20 条）。测试里可把 `throttle_s` 设为 `0`。
+
+### 群组隐私模式
+
+Bot 默认处于隐私模式，群里收不到普通文本，只能收到指令、提及和回复。要在群里响应普通消息，需要在 BotFather 关闭隐私模式，或要求用户使用唤醒前缀。未唤醒的群消息仍会被框架忽略。
