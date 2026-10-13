@@ -307,12 +307,14 @@ sequenceDiagram
 
 ## 9. 阶段计划
 
-### P0 基建与质量门禁
+### P0 基建与质量门禁（已完成，#2）
 
 - 交付：monorepo 骨架；CI 矩阵（ubuntu + windows，Python 3.12 / 3.13）；三种语言的 lint、类型检查和测试；两条代码生成流水线；基准测试框架；shadcn 初始化、主题 token、AppShell 和登录页。
 - 验收：`just check` 在两个系统上全绿；WebUI 空壳在亮暗主题下通过视觉快照。
 
 ### P1 核心运行时（同步进行 S0 沙箱技术验证）
+
+细化后的范围、验收标准、PR 拆分和待确认事项见 [P1_S0_PLAN.md](P1_S0_PLAN.md)。
 
 - 交付：消息模型、EventBus、9 个流水线阶段、Star 插件系统、HandlerIndex、热加载、控制台调试适配器、内置指令、指标；WebUI 概览页和插件页。
 - S0：Linux bubblewrap 原型；Windows AppContainer 与受限令牌两种原型的对比报告。
@@ -380,7 +382,7 @@ plugin_set: ["*"]
 
 1. AGPL 污染：禁止复制 AstrBot 代码，只按行为描述自行实现。
 2. Windows 沙箱复杂度高：S0 先验证再定方案；强隔离模式需要管理员初始化，必须在文档中说清楚。
-3. bubblewrap 在部分发行版上受 user namespace 限制：用 Landlock + seccomp 或 Docker 回退，并由 `doctor` 命令检测。
+3. bubblewrap 受 user namespace 限制：已确认 Ubuntu 24.04 及以上（包括 GitHub ubuntu-24.04 Runner）默认通过 AppArmor 限制非特权 user namespace（见 [P1_S0_PLAN.md](P1_S0_PLAN.md) 4.1）。用 Landlock + seccomp 或 Docker 回退，并由 `doctor` 命令检测。
 4. OneBot 实现之间存在差异：以 NapCat 为主测对象，只依赖 OneBot v11 标准接口。
 5. Telegram 群组隐私模式：机器人默认收不到非指令消息，需要在文档中说明设置方法。
 6. 插件热加载的模块卸载不一定干净：明确卸载契约（handler、平台注册、后台任务），并编写测试。
