@@ -9,6 +9,7 @@ export const en: typeof zhCN = {
     section: "Manage",
     overview: "Overview",
     plugins: "Plugins",
+    platforms: "Platforms",
   },
   auth: {
     title: "Sign in to Verter-Bot",
@@ -87,6 +88,12 @@ export const en: typeof zhCN = {
       description: "Make sure the server is running, then try again.",
       retry: "Retry",
     },
+    platforms: {
+      title: "Adapters",
+      description: "Enabled IM adapters",
+      none: "No adapters are running",
+      restarts: "Restarted {{count}} times",
+    },
     metrics: {
       title: "Runtime",
       description: "Event bus and pipeline, refreshed over a live connection",
@@ -101,6 +108,29 @@ export const en: typeof zhCN = {
       failed: "Failed",
       timedOut: "Timed out",
       latency: "Mean latency",
+    },
+  },
+  platforms: {
+    title: "Platforms",
+    description:
+      "Adapter status. Tokens and listen addresses stay in config.yaml.",
+    restart: "Restart {{name}}",
+    restartLabel: "Restart",
+    restarts: "Restarted {{count}} times",
+    lastError: "Last error",
+    actionFailed: "The action failed. Try again.",
+    stateRunning: "Running",
+    stateError: "Error",
+    stateStopped: "Stopped",
+    statePending: "Pending",
+    empty: {
+      title: "No platforms",
+      description: "Enable an adapter in config.yaml and start again.",
+    },
+    error: {
+      title: "Couldn't load platforms",
+      description: "Make sure the server is running, then try again.",
+      retry: "Retry",
     },
   },
   plugins: {

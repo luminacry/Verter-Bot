@@ -1,9 +1,8 @@
-"""Cold start and idle memory of the core runtime (docs/P1_S0_PLAN.md, P1-3).
+"""Cold start and idle memory of the core runtime (docs/P2_P4_PLAN.md).
 
 Measured in a fresh interpreter so earlier benchmarks cannot inflate the RSS.
-The 80 MB figure in the development plan includes OneBot and Telegram, which
-land in P2. This budget is the core process with plugins loaded and the
-dashboard left off, and it is temporary until those adapters exist.
+Idle RSS includes OneBot reverse WS and Telegram long polling against in-process
+mocks, with no third-party plugins and the dashboard left off.
 """
 
 from __future__ import annotations
@@ -21,8 +20,8 @@ BUDGETS = (
     ),
     Budget(
         "idle_rss_mb",
-        max=120,
-        note="temporary P1 ceiling for the core process; the 80 MB plan figure waits for P2",
+        max=80,
+        note="OneBot + Telegram mocks, no third-party plugins, dashboard off",
     ),
 )
 
@@ -36,8 +35,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+from tests.fakes.onebot import MockOneBotClient
+from tests.fakes.telegram import MockTelegram
 from verter.core.config import PlatformConfig, VerterConfig
 from verter.core.core_lifecycle import CoreLifecycle
+from verter.core.platform.sources.onebot_v11 import OneBotV11Platform
 
 
 def rss_mb() -> float:
@@ -58,17 +60,50 @@ async def main() -> None:
     config.dashboard.enable = False
     config.computer.enable = False
     config.platform_settings.rate_limit.enable = False
+    telegram = MockTelegram()
+    await telegram.start()
     with tempfile.TemporaryDirectory(prefix="verter-bench-") as data:
         lifecycle = CoreLifecycle(
             config,
             data_dir=Path(data),
-            extra_platforms=[PlatformConfig(id="mem", type="inmemory")],
+            extra_platforms=[
+                PlatformConfig.model_validate(
+                    {
+                        "id": "qq",
+                        "type": "onebot_v11",
+                        "ws_reverse_host": "127.0.0.1",
+                        "ws_reverse_port": 0,
+                    }
+                ),
+                PlatformConfig.model_validate(
+                    {
+                        "id": "tg",
+                        "type": "telegram",
+                        "token": "123:abc",
+                        "api_base": telegram.api_base,
+                        "poll_timeout_s": 1,
+                        "throttle_s": 0,
+                    }
+                ),
+            ],
         )
         await lifecycle.start()
+        assert lifecycle.platforms is not None
+        onebot = lifecycle.platforms.get("qq")
+        assert isinstance(onebot, OneBotV11Platform)
+        deadline = time.perf_counter() + 2
+        while onebot.bound_port is None:
+            if time.perf_counter() > deadline:
+                raise RuntimeError("OneBot reverse WS did not bind")
+            await asyncio.sleep(0.01)
+        peer = MockOneBotClient(f"ws://127.0.0.1:{onebot.bound_port}/")
+        await peer.connect()
         elapsed_ms = (time.perf_counter() - started) * 1000
         rss = rss_mb()
         print(f"{elapsed_ms:.3f} {rss:.3f}")
+        await peer.close()
         await lifecycle.stop()
+        await telegram.close()
 
 
 if sys.platform == "win32":

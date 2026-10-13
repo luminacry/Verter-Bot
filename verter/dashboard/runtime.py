@@ -13,6 +13,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from verter.core.metrics import LatencyHistogram
+from verter.core.platform.manager import PlatformManager
+from verter.core.platform.platform import PlatformStatus
 from verter.core.star.models import PluginControl
 from verter.dashboard.auth import ErrorResponse, SessionDependency
 
@@ -68,6 +70,19 @@ class PluginEnabledBody(BaseModel):
 
 
 class PluginAction(BaseModel):
+    ok: bool
+    message: str
+
+
+class PlatformModel(BaseModel):
+    id: str
+    type: str
+    status: PlatformStatus
+    restarts: int
+    last_error: str | None
+
+
+class PlatformAction(BaseModel):
     ok: bool
     message: str
 
@@ -130,6 +145,27 @@ def build_runtime_router(ctx: DashboardContext, require_session: SessionDependen
         message = await plugins.reload(name)
         return PluginAction(ok=message.startswith("已"), message=message)
 
+    @router.get("/platforms", dependencies=session, responses={401: {"model": ErrorResponse}})
+    async def platforms() -> list[PlatformModel]:
+        return _platforms(ctx)
+
+    @router.post(
+        "/platforms/{platform_id}/restart",
+        dependencies=session,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+    )
+    async def restart_platform(platform_id: str) -> PlatformAction:
+        _check_name(platform_id, "platform_not_found")
+        manager = _require_platforms(ctx)
+        if manager.get(platform_id) is None:
+            raise HTTPException(404, "platform_not_found")
+        await manager.restart(platform_id)
+        return PlatformAction(ok=True, message=f"已重启 {platform_id}")
+
     return router
 
 
@@ -183,12 +219,33 @@ def _plugins(ctx: DashboardContext) -> list[PluginModel]:
     ]
 
 
+def _platforms(ctx: DashboardContext) -> list[PlatformModel]:
+    if ctx.platforms is None:
+        return []
+    return [
+        PlatformModel(
+            id=stat.id,
+            type=stat.type,
+            status=stat.status,
+            restarts=stat.restarts,
+            last_error=stat.last_error,
+        )
+        for stat in ctx.platforms.stats()
+    ]
+
+
 def _require_plugins(ctx: DashboardContext) -> PluginControl:
     if ctx.plugins is None:
         raise HTTPException(503, "plugins_unavailable")
     return ctx.plugins
 
 
-def _check_name(name: str) -> None:
+def _require_platforms(ctx: DashboardContext) -> PlatformManager:
+    if ctx.platforms is None:
+        raise HTTPException(503, "platforms_unavailable")
+    return ctx.platforms
+
+
+def _check_name(name: str, detail: str = "plugin_not_found") -> None:
     if not _NAME.fullmatch(name):
-        raise HTTPException(404, "plugin_not_found")
+        raise HTTPException(404, detail)

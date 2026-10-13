@@ -30,6 +30,12 @@ def main() -> int:
     try:
         if cli(["init", "--data-dir", str(data_dir)]) != 0:
             return 1
+        from verter.core.config import CONFIG_FILENAME, PlatformConfig, load_config, write_config
+
+        config_path = data_dir / CONFIG_FILENAME
+        config = load_config(config_path)
+        config.platform.append(PlatformConfig(id="mem", type="inmemory"))
+        write_config(config_path, config)
         return cli(["run", "--data-dir", str(data_dir), "--port", port, "--webui-dist", str(dist)])
     finally:
         shutil.rmtree(data_dir, ignore_errors=True)

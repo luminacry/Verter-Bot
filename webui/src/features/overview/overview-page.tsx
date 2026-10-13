@@ -27,6 +27,7 @@ import { formatDateTime, formatDuration } from "@/lib/format"
 import { MetricsCard } from "./metrics-card"
 
 type SystemInfo = components["schemas"]["SystemInfo"]
+type Platform = components["schemas"]["PlatformModel"]
 
 export function OverviewPage() {
   const { t } = useTranslation()
@@ -201,8 +202,66 @@ function OverviewCards({ info }: { info: SystemInfo }) {
           </div>
         </CardContent>
       </Card>
+      <PlatformsCard />
       <MetricsCard />
     </div>
+  )
+}
+
+function PlatformsCard() {
+  const { t } = useTranslation()
+  const query = $api.useQuery("get", "/api/platforms", {}, { retry: false })
+  const platforms = query.data ?? []
+
+  return (
+    <Card
+      className="md:col-span-2 xl:col-span-3"
+      data-testid="overview-platforms"
+    >
+      <CardHeader>
+        <CardTitle>{t("overview.platforms.title")}</CardTitle>
+        <CardDescription>{t("overview.platforms.description")}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {platforms.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {t("overview.platforms.none")}
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {platforms.map((platform) => (
+              <PlatformRow key={platform.id} platform={platform} />
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PlatformRow({ platform }: { platform: Platform }) {
+  const { t } = useTranslation()
+  const failed = platform.status === "error"
+  const label =
+    platform.status === "running"
+      ? t("platforms.stateRunning")
+      : platform.status === "error"
+        ? t("platforms.stateError")
+        : platform.status === "stopped"
+          ? t("platforms.stateStopped")
+          : t("platforms.statePending")
+  return (
+    <li className="flex items-center justify-between gap-4 text-sm">
+      <span className="flex min-w-0 flex-col">
+        <span className="font-mono">{platform.id}</span>
+        <span className="truncate text-xs text-muted-foreground">
+          {platform.type}
+          {" · "}
+          {t("overview.platforms.restarts", { count: platform.restarts })}
+        </span>
+      </span>
+      <Badge variant={failed ? "outline" : "secondary"}>{label}</Badge>
+    </li>
   )
 }
 

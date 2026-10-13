@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { LayoutDashboardIcon, PuzzleIcon } from "lucide-react"
+import { CableIcon, LayoutDashboardIcon, PuzzleIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { BrandMark } from "@/components/brand-mark"
@@ -18,6 +18,7 @@ import {
 
 const NAV_ITEMS: readonly NavItem[] = [
   { to: "/", titleKey: "nav.overview", icon: LayoutDashboardIcon },
+  { to: "/platforms", titleKey: "nav.platforms", icon: CableIcon },
   { to: "/plugins", titleKey: "nav.plugins", icon: PuzzleIcon },
 ]
 

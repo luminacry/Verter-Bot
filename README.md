@@ -6,13 +6,13 @@
 
 ## 当前进度
 
-P0、P1、S0 已合入 main。P1 覆盖消息流水线、插件系统和 WebUI 观测；S0 锁定 Linux / Windows 沙箱默认方案（无隔离时拒绝执行）。P2-1 已实现 OneBot v11（反向 / 正向 WebSocket）。P2-2 已实现 Telegram 长轮询。阶段计划见 [docs/P2_P4_PLAN.md](docs/P2_P4_PLAN.md)，平台配置见 [docs/platforms.md](docs/platforms.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
+P0、P1、S0 已合入 main。P1 覆盖消息流水线、插件系统和 WebUI 观测；S0 锁定 Linux / Windows 沙箱默认方案（无隔离时拒绝执行）。P2-1 已实现 OneBot v11（反向 / 正向 WebSocket）。P2-2 已实现 Telegram 长轮询。P2-3 已实现平台 API、WebUI 平台页，并把空载 RSS 预算锁到 80 MB。阶段计划见 [docs/P2_P4_PLAN.md](docs/P2_P4_PLAN.md)，平台配置见 [docs/platforms.md](docs/platforms.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
 
 | 组件 | 技术 | P0 已有内容 |
 |------|------|-------------|
 | 核心运行时 `verter/` | Python 3.12+、asyncio | 配置（沙箱默认本地、仅管理员、禁止联网）、CLI、生命周期、WebUI 后端 API（登录、系统信息） |
 | 沙箱执行器 `sandbox/` | Rust 1.99 | `verter-sandbox`：NDJSON 握手、`doctor`、协议 JSON Schema；Linux `exec`（bubblewrap，Landlock 回退）与可选 `setup`；Windows `exec`（AppContainer，已初始化时用隔离用户）与管理员 `setup` |
-| WebUI `webui/` | React 19 + shadcn/ui（Base UI） | 登录页、概览页（实时指标）、插件页、亮 / 暗主题、中 / 英文 |
+| WebUI `webui/` | React 19 + shadcn/ui（Base UI） | 登录页、概览页（实时指标与适配器状态）、插件页、平台页、亮 / 暗主题、中 / 英文 |
 
 ## 环境要求
 

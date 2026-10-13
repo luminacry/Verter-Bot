@@ -120,6 +120,43 @@ async def test_crashed_platforms_restart_with_backoff() -> None:
         unregister_platform_adapter("flaky")
 
 
+async def test_restart_replaces_the_adapter_and_counts() -> None:
+    class Durable(_Scripted):
+        def __init__(self, config: PlatformConfig, context: PlatformContext) -> None:
+            super().__init__(config, context)
+            self.running = asyncio.Event()
+            self.stopped = asyncio.Event()
+
+        async def run(self) -> None:
+            self.running.set()
+            await asyncio.Event().wait()
+
+        async def terminate(self) -> None:
+            self.stopped.set()
+
+    _register("durable", Durable)
+    try:
+        manager = _manager([PlatformConfig(id="d", type="durable")])
+        await manager.start()
+        first = manager.get("d")
+        assert isinstance(first, Durable)
+        await first.running.wait()
+        await manager.restart("d")
+        second = manager.get("d")
+        assert isinstance(second, Durable)
+        assert second is not first
+        await second.running.wait()
+        assert first.stopped.is_set()
+        stat = manager.stats()[0]
+        assert stat.restarts == 1
+        assert stat.status is PlatformStatus.RUNNING
+        with pytest.raises(KeyError):
+            await manager.restart("missing")
+        await manager.stop()
+    finally:
+        unregister_platform_adapter("durable")
+
+
 async def test_terminate_errors_do_not_block_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:
     class Stuck(_Scripted):
         def __init__(self, config: PlatformConfig, context: PlatformContext) -> None:

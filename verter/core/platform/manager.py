@@ -82,6 +82,24 @@ class PlatformManager:
             )
             logger.info("Platform %s (%s) started", pid, platform.config.type)
 
+    async def restart(self, platform_id: str) -> None:
+        """Stop one adapter and start a fresh instance. Increments ``restarts``.
+
+        Raises:
+            KeyError: If ``platform_id`` is not a started adapter.
+        """
+        platform = self._platforms.get(platform_id)
+        if platform is None:
+            raise KeyError(platform_id)
+        await self._halt(platform_id)
+        replacement = get_platform_adapter(platform.config.type)(platform.config, self._context)
+        self._platforms[platform_id] = replacement
+        self._restarts[platform_id] += 1
+        self._tasks[platform_id] = asyncio.create_task(
+            self._supervise(replacement), name=f"platform:{platform_id}"
+        )
+        logger.info("Platform %s (%s) restarted", platform_id, replacement.config.type)
+
     async def stop(self) -> None:
         platforms, tasks = self._platforms, self._tasks
         self._platforms, self._tasks = {}, {}
@@ -122,3 +140,17 @@ class PlatformManager:
             platform.status = PlatformStatus.STOPPED
             logger.info("Platform %s stopped", pid)
             return
+
+    async def _halt(self, platform_id: str) -> None:
+        task = self._tasks.pop(platform_id, None)
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        platform = self._platforms.get(platform_id)
+        if platform is None:
+            return
+        try:
+            await asyncio.wait_for(platform.terminate(), _TERMINATE_TIMEOUT_S)
+        except Exception:  # noqa: BLE001 - restart must continue even if terminate misbehaves
+            logger.exception("Platform %s did not terminate cleanly before restart", platform_id)

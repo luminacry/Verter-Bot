@@ -4,9 +4,10 @@ from pathlib import Path
 
 from httpx import ASGITransport, AsyncClient
 
-from verter.core.config import VerterConfig
+from verter.core.config import PlatformConfig, VerterConfig
 from verter.core.db import Database
 from verter.core.log_ring import LogRing
+from verter.core.platform.manager import PlatformManager
 from verter.core.star.plugin_manager import PluginManager
 from verter.dashboard.app import create_app
 from verter.dashboard.context import DashboardContext
@@ -31,9 +32,17 @@ async def _plugins_client(
 
 
 async def test_metrics_logs_and_plugins_require_a_session(client: AsyncClient) -> None:
-    for path in ("/api/metrics", "/api/metrics/stream", "/api/logs", "/api/plugins"):
+    for path in (
+        "/api/metrics",
+        "/api/metrics/stream",
+        "/api/logs",
+        "/api/plugins",
+        "/api/platforms",
+    ):
         response = await client.get(path)
         assert response.status_code == 401
+    restart = await client.post("/api/platforms/mem/restart")
+    assert restart.status_code == 401
 
 
 async def test_metrics_and_logs_when_nothing_is_running(
@@ -49,6 +58,9 @@ async def test_metrics_and_logs_when_nothing_is_running(
     assert body["pending"] == 0
     assert body["latency"]["total"] == 0
     assert (await client.get("/api/plugins")).json() == []
+    assert (await client.get("/api/platforms")).json() == []
+    unavailable = await client.post("/api/platforms/mem/restart")
+    assert unavailable.status_code == 503
 
 
 class _DisconnectAfter:
@@ -124,3 +136,42 @@ async def test_logs_endpoint_returns_the_ring(
     assert response.status_code == 200
     assert response.json()[0]["message"] == "kept"
     assert response.json()[0]["level"] == "WARNING"
+
+
+async def test_platform_list_and_restart(ctx: DashboardContext, admin_password: str) -> None:
+    manager = PlatformManager(
+        [PlatformConfig(id="mem", type="inmemory")],
+        _Sink(),
+        request_shutdown=lambda: None,
+    )
+    await manager.start()
+    ctx.platforms = manager
+    transport = ASGITransport(app=create_app(ctx))
+    client = AsyncClient(transport=transport, base_url="http://testserver")
+    try:
+        async with client:
+            logged_in = await client.post(
+                "/api/auth/login", json={"username": "admin", "password": admin_password}
+            )
+            assert logged_in.status_code == 200
+            listing = (await client.get("/api/platforms")).json()
+            assert listing[0]["id"] == "mem"
+            assert listing[0]["type"] == "inmemory"
+            assert listing[0]["restarts"] == 0
+            first = manager.get("mem")
+            restarted = await client.post("/api/platforms/mem/restart")
+            assert restarted.json() == {"ok": True, "message": "已重启 mem"}
+            listing = (await client.get("/api/platforms")).json()
+            assert listing[0]["restarts"] == 1
+            assert manager.get("mem") is not first
+            missing = await client.post("/api/platforms/nope/restart")
+            assert missing.status_code == 404
+            bad = await client.post("/api/platforms/a.b/restart")
+            assert bad.status_code == 404
+    finally:
+        await manager.stop()
+
+
+class _Sink:
+    def commit(self, event: object) -> bool:
+        return True
