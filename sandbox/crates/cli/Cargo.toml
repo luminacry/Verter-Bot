@@ -20,5 +20,8 @@ tokio.workspace = true
 anyhow.workspace = true
 verter-sandbox-linux = { path = "../linux" }
 
+[target.'cfg(windows)'.dependencies]
+verter-sandbox-windows = { path = "../windows" }
+
 [lints]
 workspace = true

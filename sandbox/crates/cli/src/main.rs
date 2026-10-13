@@ -6,7 +6,7 @@ mod serve;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -37,7 +37,7 @@ enum Command {
     Schema,
     /// Run a command inside an isolation backend.
     Exec {
-        /// `auto`, `bubblewrap`, or `landlock`.
+        /// `auto`, or a platform backend (`bubblewrap`, `landlock`, `appcontainer`, `restricted`, `isolated`).
         #[arg(long, default_value = "auto")]
         backend: String,
         /// Writable workspace. Defaults to the current directory.
@@ -62,11 +62,14 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
         command: Vec<OsString>,
     },
-    /// Install an optional `AppArmor` profile so bubblewrap can create user namespaces.
+    /// Install optional host isolation. Linux writes an `AppArmor` profile; Windows creates sandbox users.
     Setup {
-        /// Write and load the profile. Requires root when `AppArmor` is the active LSM.
+        /// Apply the change. Linux requires root when `AppArmor` is the active LSM. Windows requires an administrator.
         #[arg(long)]
         install: bool,
+        /// Remove the Windows sandbox users and firewall rule. Requires an administrator.
+        #[arg(long)]
+        uninstall: bool,
     },
 }
 
@@ -97,7 +100,7 @@ fn main() -> ExitCode {
         } => exec_command(
             &backend, workspace, network, timeout, memory_mb, nproc, cpu, command,
         ),
-        Command::Setup { install } => setup_command(install),
+        Command::Setup { install, uninstall } => setup_command(install, uninstall),
     }
 }
 
@@ -179,7 +182,10 @@ fn doctor(json: bool) {
     println!("os: {}", info.os);
     println!("arch: {}", info.arch);
     if info.backends.is_empty() {
-        println!("isolation backends: none available on this platform yet");
+        #[cfg(windows)]
+        println!("protocol backends: none listed (Windows isolation is reported below)");
+        #[cfg(not(windows))]
+        println!("protocol backends: none available on this platform yet");
     }
     for backend in &info.backends {
         let state = if backend.available {
@@ -199,6 +205,15 @@ fn doctor(json: bool) {
         let report = verter_sandbox_linux::host_report();
         println!("{}", report.auto_line);
         println!("{}", report.fallback_line);
+        println!("{}", report.policy_line);
+    }
+    #[cfg(windows)]
+    {
+        let report = verter_sandbox_windows::host_report();
+        println!("{}", report.auto_line);
+        println!("{}", report.appcontainer_line);
+        println!("{}", report.isolated_offline_line);
+        println!("{}", report.isolated_online_line);
         println!("{}", report.policy_line);
     }
 }
@@ -263,7 +278,61 @@ fn exec_command(
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
+fn exec_command(
+    backend: &str,
+    workspace: Option<PathBuf>,
+    network: bool,
+    timeout: u64,
+    memory_mb: u64,
+    nproc: u64,
+    _cpu: u64,
+    command: Vec<OsString>,
+) -> ExitCode {
+    let requested = match verter_sandbox_windows::RequestedBackend::parse(backend) {
+        Ok(requested) => requested,
+        Err(err) => {
+            eprintln!("verter-sandbox: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let Some(memory_bytes) = memory_mb.checked_mul(1024 * 1024) else {
+        eprintln!("verter-sandbox: memory limit overflows");
+        return ExitCode::FAILURE;
+    };
+    let workspace = workspace.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let request = verter_sandbox_windows::ExecRequest {
+        backend: requested,
+        command,
+        workspace,
+        network,
+        timeout: Duration::from_secs(timeout),
+        memory_bytes,
+        nproc,
+    };
+    match verter_sandbox_windows::execute(&request) {
+        Ok(result) => {
+            eprintln!("verter-sandbox: isolation {}", result.backend.as_str());
+            if result.timed_out {
+                eprintln!(
+                    "verter-sandbox: timed out after {timeout}s; killed the sandbox process tree"
+                );
+                return ExitCode::from(124);
+            }
+            let Some(code) = result.exit_code else {
+                return ExitCode::from(128);
+            };
+            u8::try_from(code).map_or(ExitCode::FAILURE, ExitCode::from)
+        }
+        Err(err) => {
+            eprintln!("verter-sandbox: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(all(not(target_os = "linux"), not(windows)))]
 #[allow(clippy::too_many_arguments)]
 fn exec_command(
     _backend: &str,
@@ -288,7 +357,13 @@ fn exit_code(code: Option<i32>) -> ExitCode {
 }
 
 #[cfg(target_os = "linux")]
-fn setup_command(install: bool) -> ExitCode {
+fn setup_command(install: bool, uninstall: bool) -> ExitCode {
+    if uninstall {
+        println!(
+            "This Linux prototype does not remove an AppArmor profile. Delete /etc/apparmor.d/bwrap manually if you installed one."
+        );
+        return ExitCode::SUCCESS;
+    }
     match verter_sandbox_linux::setup(install) {
         Ok(verter_sandbox_linux::ApparmorSetup::NotActive) => {
             println!(
@@ -313,8 +388,47 @@ fn setup_command(install: bool) -> ExitCode {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-fn setup_command(_install: bool) -> ExitCode {
-    eprintln!("verter-sandbox: AppArmor setup is only available on Linux");
+#[cfg(windows)]
+fn setup_command(install: bool, uninstall: bool) -> ExitCode {
+    if install && uninstall {
+        eprintln!("verter-sandbox: pass only one of --install and --uninstall");
+        return ExitCode::FAILURE;
+    }
+    if uninstall {
+        return match verter_sandbox_windows::uninstall() {
+            Ok(verter_sandbox_windows::SetupOutcome::Removed) => {
+                println!("Removed the Windows sandbox users, firewall rule, and password files.");
+                ExitCode::SUCCESS
+            }
+            Ok(_) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("verter-sandbox: {err}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    match verter_sandbox_windows::setup(install) {
+        Ok(verter_sandbox_windows::SetupOutcome::NeedsAdmin) => {
+            println!("Windows isolated sandbox needs one administrator setup.");
+            println!("Re-run: verter-sandbox setup --install");
+            ExitCode::SUCCESS
+        }
+        Ok(verter_sandbox_windows::SetupOutcome::Installed) => {
+            println!(
+                "Created verter-sandbox-offline and verter-sandbox-online, and blocked outbound traffic for the offline user."
+            );
+            ExitCode::SUCCESS
+        }
+        Ok(verter_sandbox_windows::SetupOutcome::Removed) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("verter-sandbox: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(all(not(target_os = "linux"), not(windows)))]
+fn setup_command(_install: bool, _uninstall: bool) -> ExitCode {
+    eprintln!("verter-sandbox: sandbox setup is only available on Linux and Windows");
     ExitCode::FAILURE
 }
