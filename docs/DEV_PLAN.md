@@ -1,341 +1,405 @@
-# Verter-Bot Development Plan
+# Verter-Bot 开发计划（v2）
 
-Reference target: [AstrBotDevs/AstrBot](https://github.com/AstrBotDevs/AstrBot) architecture (structure and behavior), **not** a source fork.
+参考对象：[AstrBotDevs/AstrBot](https://github.com/AstrBotDevs/AstrBot) 的模块划分与运行流程。Verter-Bot 是独立实现，不是 fork。
 
-**License note:** AstrBot is AGPL-3.0. Verter-Bot must be an independent implementation. Do not copy AstrBot source files, prompts, or dashboard assets. Mirror module boundaries and runtime flow only.
+> 许可证约束：AstrBot 使用 AGPL-3.0。本项目只参考架构与公开插件 API 的命名，不复制其源码、提示词或前端资源。Verter-Bot 自身的许可证需由仓库所有者确定。
 
-## Goals
+## 0. 本版变更（相对 v1）
 
-| Goal | Decision |
-|------|----------|
-| Structure | Align with AstrBot: Lifecycle → EventBus → Pipeline → Stars / Provider → Respond |
-| Platforms (MVP) | OneBot v11 (`aiocqhttp` reverse WS) + Telegram |
-| Scope (MVP) | Near-AstrBot subset: Provider manager, multi-platform, plugin hot-reload, simple WebUI |
-| Performance | asyncio-first; bounded queue; per-session locks; concurrent pipelines; hot path without sync I/O |
+- 新增：本地 Linux / Windows 沙箱，可被 Agent 通过工具调用。
+- 新增：WebUI 严格使用 shadcn/ui 组件库及其规范。
+- 定稿：分组件的开发语言与核心依赖（第 2 节）。
+- 新增：质量保障体系（第 8 节），覆盖效率、性能、质量、设计风格。
+- 修订：性能设计用"索引分发"替代 v1 中"唤醒检查保持 O(handler 数)"的做法；阶段改为垂直切片交付（后端、API、WebUI 页面、测试一起完成）。
 
-Out of MVP (Phase 2+): Knowledge Base / RAG, MCP, Agent Sandbox, STT/TTS, Dify/Coze runners, multi-language Dashboard parity, WhatsApp, etc.
+## 1. 目标与范围
 
-## Architecture
+| 维度 | 要求 |
+|------|------|
+| 结构 | 对齐 AstrBot：CoreLifecycle → EventBus → Pipeline（洋葱模型）→ Star 插件 / Provider → Respond |
+| 平台（MVP） | OneBot v11（QQ，NapCat 等）+ Telegram |
+| 能力（MVP） | Provider 管理、多平台、插件热加载、WebUI、本地沙箱（Linux + Windows） |
+| 首要指标 | 运行性能；同时保证产品质量与统一的设计风格 |
+
+MVP 之外（后续迭代）：知识库 / RAG、MCP、STT / TTS、Dify / Coze 等第三方 Agent Runner、更多平台。
+
+## 2. 技术栈决策
+
+### 2.1 结论
+
+| 组件 | 语言 / 技术 | 职责 |
+|------|-------------|------|
+| 核心运行时 | Python 3.12+，asyncio（Linux 上启用 uvloop） | 生命周期、事件总线、流水线、插件、平台适配器、模型调用、WebUI 后端 API |
+| 沙箱执行器 | Rust（独立二进制 `verter-sandbox`） | Linux / Windows 进程隔离、资源限制、文件与网络策略 |
+| WebUI | TypeScript + React + Vite + Tailwind CSS v4 + shadcn/ui | 管理界面 |
+
+### 2.2 理由
+
+**核心用 Python：**
+
+1. 结构与生态：要和 AstrBot 结构相似，插件 API 与之对齐后，AstrBot 插件只需改 import 和少量命名即可移植；插件热加载依赖 Python 的动态导入。
+2. 负载特征：机器人是 I/O 密集型。真正的瓶颈是平台限速（Telegram 单聊约 1 条/秒、群组 20 条/分钟，见 [Bots FAQ](https://core.telegram.org/bots/faq#my-bot-is-hitting-limits-how-do-i-avoid-this)）和 LLM 延迟（秒级），而不是框架的微秒级开销。
+3. 架构收益远大于语言收益：按 AstrBot 唤醒阶段的成本结构做了一个模拟测量（见附录 A）。在 1000 个 handler 时，索引分发约为逐个扫描的 300 倍；而 Python 分发本身每条消息只有约 1 微秒。
+
+**沙箱用 Rust：**
+
+1. 需要直接调用操作系统安全接口：Linux 的 namespace / seccomp / Landlock，Windows 的受限令牌 / ACL / Job Object / 防火墙。
+2. 安全边界代码需要内存安全，并能编译成单个静态二进制，方便在 Linux 和 Windows 上分发。
+3. Windows 上的隔离必须由独立进程完成。参考 [Codex 的 Windows 沙箱设计](https://openai.com/index/building-codex-windows-sandbox/)：命令需要由一个以沙箱用户身份运行的 runner 来创建受限令牌并启动。Python 主进程不进入安全边界。
+
+**WebUI 用 TypeScript + React：** shadcn/ui 是 React 组件体系；配合严格模式的 TypeScript，以及由 OpenAPI 生成的客户端，前后端可以共用同一套类型。
+
+### 2.3 放弃的方案
+
+- Go 或 Rust 全栈：插件只能走 RPC 或 WASM，失去 AstrBot 插件的可移植性和热加载能力，业务开发效率也明显下降。
+- TypeScript 全栈：统一了语言，但放弃了 Python 插件生态，与"结构类似 AstrBot"的目标冲突。
+- 纯 Python 沙箱（AstrBot 的做法）：Linux 上调用 bubblewrap 可行，但 Windows 的安全接口用 ctypes 维护成本高，而且仍然需要独立的 runner 进程。
+
+### 2.4 核心依赖
+
+- **Python**
+  - 运行时：aiohttp（OneBot WS 服务端、Telegram Bot API、OpenAI 兼容客户端）、FastAPI + uvicorn（WebUI API 与 OpenAPI 文档）、pydantic v2（配置与 API 模型）、orjson、aiosqlite（WAL 模式）、uvloop（非 Windows）。
+  - 工具链：uv、ruff、pyright、pytest、pytest-asyncio、hypothesis。
+  - 不引入 AstrBot 依赖清单中的重型包（pandas、faiss、多家官方 SDK 等）。所有平台和模型实现按配置懒加载。
+- **Rust**
+  - 运行时：tokio、serde、schemars（导出协议 JSON Schema）。
+  - Linux：bubblewrap（外部依赖）、seccompiler、landlock。
+  - Windows：windows-rs（令牌、ACL、Job Object、AppContainer、防火墙）。
+  - 工具链：clippy、rustfmt、cargo-deny。
+- **WebUI**
+  - 运行时：React 19、shadcn/ui（Base UI）、lucide-react、TanStack Router / Query / Table、react-hook-form + zod、Sonner、shadcn Chart、i18next。
+  - 工具链：pnpm、ESLint、Prettier（含 Tailwind 类名排序插件）、Vitest、Playwright、axe-core。
+
+## 3. 总体架构
 
 ```mermaid
 flowchart LR
-  subgraph adapters [PlatformAdapters]
-    OneBot[OneBot_v11]
-    TG[Telegram]
+  subgraph platforms [Platform Adapters]
+    OneBot["OneBot v11"]
+    Telegram["Telegram"]
   end
-  adapters -->|commit_event| Q[EventQueue]
-  Q --> EB[EventBus]
-  EB -->|create_task| PS[PipelineScheduler]
-  PS --> Stages[PipelineStages]
-  Stages --> Stars[PluginStars]
-  Stages --> LLM[ProviderManager]
-  Stages --> Resp[RespondStage]
-  Resp --> adapters
-  Dash[WebUI_Dashboard] --> Life[CoreLifecycle]
-  Life --> EB
-  Life --> PM[PlatformManager]
-  Life --> Prov[ProviderManager]
-  Life --> Plug[PluginManager]
+  subgraph core [Python Core]
+    Lifecycle["CoreLifecycle"]
+    EventBus["EventBus (bounded queue + workers)"]
+    Pipeline["Pipeline Stages"]
+    Index["HandlerIndex"]
+    Stars["Star Plugins"]
+    Agent["Agent Tool Loop"]
+    Providers["ProviderManager"]
+    Computer["ComputerBooter"]
+    DashAPI["Dashboard API (FastAPI)"]
+  end
+  subgraph sandbox [Rust Sandbox Runner]
+    Runner["verter-sandbox serve"]
+    LinuxBackend["Linux: bwrap + seccomp"]
+    WinBackend["Windows: token or AppContainer + Job Object"]
+  end
+  WebUI["WebUI (React + shadcn)"]
+  OneBot --> EventBus
+  Telegram --> EventBus
+  Lifecycle --> EventBus
+  EventBus --> Pipeline
+  Pipeline --> Index
+  Index --> Stars
+  Pipeline --> Agent
+  Agent --> Providers
+  Agent --> Computer
+  Computer -->|"NDJSON over stdio"| Runner
+  Runner --> LinuxBackend
+  Runner --> WinBackend
+  Pipeline -->|"RespondStage"| OneBot
+  Pipeline -->|"RespondStage"| Telegram
+  WebUI -->|"OpenAPI client"| DashAPI
+  DashAPI --> Lifecycle
 ```
 
-### Runtime data flow
+流水线阶段顺序与 AstrBot 一致：`WakingCheck → WhitelistCheck → SessionStatusCheck → RateLimit → ContentSafetyCheck → PreProcess → Process（插件 → LLM）→ ResultDecorate → Respond`。保留 `STAGES_ORDER` 和 `@register_stage`，handler 每 `yield` 一次结果，就立即经过修饰和发送阶段（洋葱模型）。
 
-1. Adapter receives platform message → convert to `VerterMessage` + `VerterMessageEvent`
-2. `Platform.commit_event(event)` puts event on `asyncio.Queue`
-3. `EventBus.dispatch` loop: `get` → log → `asyncio.create_task(scheduler.execute(event))` (strong refs on pending tasks)
-4. `PipelineScheduler` runs stages in fixed order; stages that return async generators implement the onion model (pre-yield → next stages → post-yield)
-5. `ProcessStage`: activated Star handlers first; if still wake and no terminal send, call LLM Provider
-6. `RespondStage` sends `MessageEventResult` via platform-specific `event.send`
-7. Session lock around LLM turns for the same `unified_msg_origin` to avoid interleaved context writes
-
-### Pipeline stage order (MVP)
-
-Mirror AstrBot’s order; keep unused stages as thin stubs until needed:
-
-1. `WakingCheckStage` — wake prefix / @ / private chat / command filter match
-2. `WhitelistCheckStage` — optional ID whitelist
-3. `SessionStatusCheckStage` — session enable flag
-4. `RateLimitStage` — per-UMO token bucket / sliding window
-5. `ContentSafetyCheckStage` — keyword blocklist (local only in MVP)
-6. `PreProcessStage` — normalize text, strip wake prefix, attach session id
-7. `ProcessStage` — Stars then Provider
-8. `ResultDecorateStage` — reply prefix, mention, markdown flag
-9. `RespondStage` — send + after-send hooks
-
-## Target package layout
+## 4. 仓库结构（monorepo）
 
 ```text
-verter/
-  __init__.py
-  __main__.py                 # python -m verter
-  cli.py                      # init / run / plugin commands
+verter/                      # Python 核心包
   core/
-    lifecycle.py              # CoreLifecycle: wire managers + start/stop
-    event_bus.py
-    config.py                 # pydantic settings + YAML/JSON load
-    workspace.py              # data/ paths
-    log.py
-    conversation.py           # ConversationManager
-    session_lock.py
-    message/
-      components.py           # Plain, At, Image, Reply, Record, File (MVP set)
-      result.py               # MessageChain, MessageEventResult
-    pipeline/
-      stage.py                # Stage ABC + register_stage
-      stage_order.py
-      context.py
-      scheduler.py
-      bootstrap.py
-      waking_check/
-      whitelist_check/
-      session_status_check/
-      rate_limit/
-      content_safety/
-      preprocess/
-      process/                # star_request + provider_request
-      result_decorate/
-      respond/
-    platform/
-      base.py                 # Platform ABC
-      event.py                # VerterMessageEvent
-      message.py              # VerterMessage, MessageType
-      manager.py
-      register.py
-      sources/
-        console/              # local REPL for tests (dev only)
-        aiocqhttp/            # OneBot v11
-        telegram/
-    provider/
-      base.py                 # Provider ABC (text_chat / stream)
-      manager.py
-      register.py
-      sources/
-        openai_compat.py      # OpenAI + DeepSeek + Ollama-compatible
-    star/
-      base.py                 # Star plugin base
-      manager.py              # load / unload / hot-reload
-      handler.py              # registry + EventType
-      filters/                # command, regex, permission, platform, msg type
-      register.py             # @register_command etc.
-  dashboard/
-    server.py                 # FastAPI: status, config, plugins, platforms, providers
-    static/                   # minimal SPA or Jinja pages
-  builtin_stars/
-    builtin_commands/         # /help /plugin /provider /reset etc.
-plugins/                      # user plugins (data/plugins at runtime)
-tests/
-  unit/
-  integration/
-pyproject.toml
-README.md
+    core_lifecycle.py  event_bus.py  config.py  log.py  db.py  metrics.py  conversation_mgr.py
+    message/                 # 消息组件、MessageChain、MessageEventResult
+    pipeline/                # scheduler / stage / stage_order + 各阶段子目录
+    platform/                # Platform 基类、事件、管理器、注册；sources/{onebot,telegram,console}
+    provider/                # Provider 基类、管理器、FunctionToolManager；sources/openai_compat.py
+    star/                    # Star、Context、注册装饰器、过滤器、HandlerIndex、PluginManager
+    computer/                # ComputerBooter（local / docker）、SandboxClient、Agent 沙箱工具
+  api/                       # 插件公共 API（对齐 astrbot.api 的组织方式）
+  builtin_stars/             # 内置指令插件
+  dashboard/                 # FastAPI 路由；托管 webui 构建产物
+  cli/                       # verter init / run / doctor
+sandbox/                     # Rust workspace
+  crates/protocol            # 请求/响应类型 → JSON Schema
+  crates/linux               # bubblewrap 启动、seccomp、Landlock 回退
+  crates/windows             # 受限令牌 / AppContainer、Job Object、ACL、防火墙
+  crates/cli                 # verter-sandbox：serve / setup / doctor
+webui/                       # React + shadcn
+  components.json
+  src/components/ui/         # 仅由 shadcn CLI / MCP 写入
+  src/components/            # 业务组合组件
+  src/routes/                # 页面
+  src/lib/api/               # 由 OpenAPI 生成
+tests/  benchmarks/  docs/
+pyproject.toml  uv.lock  justfile  .github/workflows/
 ```
 
-## Performance design (non-negotiable)
+## 5. 核心性能设计
 
-1. **Async end-to-end** — adapters, pipeline, provider HTTP, DB all async; no blocking calls on the event loop (use `asyncio.to_thread` only for rare sync libs).
-2. **Bounded event queue** — `asyncio.Queue(maxsize=N)`; backpressure metrics when full; never unbounded growth under flood.
-3. **Concurrent pipelines** — one task per event (like AstrBot EventBus); do **not** process the queue serially.
-4. **Per-session lock** — `SessionLockManager` keyed by `unified_msg_origin` around conversation read/LLM/write.
-5. **Handler filter short-circuit** — cheap filters first (platform / message type / permission) before command parse; keep waking-check O(handlers) but cache enabled plugin list.
-6. **Hot reload isolation** — reload one plugin module; unregister its handlers/adapters; avoid full process restart for plugin edits.
-7. **HTTP client reuse** — single `httpx.AsyncClient` / openai client pool per provider instance.
-8. **Structured logging** — loguru (or std logging) with category; debug off on hot path in production.
-9. **DB** — SQLite + SQLAlchemy async (aiosqlite) for conversations/stats; WAL mode; no sync ORM on hot path.
-10. **Metrics hooks** — queue depth, pipeline latency histogram, provider latency; expose on Dashboard `/api/metrics`.
+依据 AstrBot 源码中可以改进的点：
 
-## Phase plan
+- [`event_bus.py`](https://github.com/AstrBotDevs/AstrBot/blob/master/astrbot/core/event_bus.py) 每个事件直接 `create_task`，没有并发上限和背压。
+- [`waking_check/stage.py`](https://github.com/AstrBotDevs/AstrBot/blob/master/astrbot/core/pipeline/waking_check/stage.py) 每条消息遍历全部 handler，并逐个运行过滤器。
+- [`star_handler.py`](https://github.com/AstrBotDevs/AstrBot/blob/master/astrbot/core/star/star_handler.py) 的 `get_handlers_by_event_type` 每次调用都重新扫描并生成列表。
 
-### Phase 0 — Scaffold (foundation)
+对应措施：
 
-Deliverables:
+1. **HandlerIndex**：插件加载、卸载或启停时构建不可变索引并整体替换。索引包括：指令首词字典与指令组子树、正则列表、按消息类型分桶的监听器、按事件类型预先排好优先级的钩子。每条消息只做一次空白规整和一次字典查找；平台、权限、自定义过滤器只对候选 handler 执行。未唤醒消息的拒绝成本与 handler 数量无关。
+2. **EventBus**：有界队列 + 固定数量的 worker，队列满时丢弃并计数，不会无限创建任务。保留 AstrBot 的语义：只有 LLM 调用和会话写入按会话串行；锁表按引用计数回收，不经过全局锁。Provider 另有并发上限，保护上游 API 配额。
+3. **启动与内存**：依赖精简，平台和模型实现按配置懒加载；handler 的参数解析器在注册时编译好。
+4. **网络层**：统一使用 aiohttp 连接池和 keep-alive，JSON 用 orjson；OneBot 直接基于 aiohttp WebSocket 实现（AstrBot 经由 aiocqhttp 跑在 Quart / Hypercorn 上）。
+5. **存储**：SQLite WAL 模式；会话历史使用 LRU 缓存并合并写入，退出时落盘，也可配置为直写。
+6. **日志**：通过 QueueHandler 由后台线程写日志，不阻塞事件循环；保留一个环形缓冲区供 WebUI 实时查看。
+7. **沙箱**：runner 常驻，避免每次调用都启动辅助进程；工作区按会话复用；输出以流式返回，并限制大小。
+8. **WebUI**：路由级代码分割；静态资源带哈希、长缓存并压缩；用 SSE 推送替代轮询。
 
-- `pyproject.toml` (Python ≥3.12), package `verter`, ruff + pytest
-- Config schema (`wake_prefix`, `admins_id`, platform list, provider list, dashboard)
-- Logging + workspace (`data/`, `data/plugins/`, `data/config.yaml`)
-- `CoreLifecycle` skeleton: create queue, start/stop hooks
-- Console adapter that reads stdin / simple TCP and emits events (for offline tests)
+## 6. 本地沙箱（Agent 可调用）
 
-Acceptance:
+现状：AstrBot 的本地进程沙箱只支持 Linux（bubblewrap）和 macOS（Seatbelt），在 Windows 上会报 `No Local process sandbox backend is available`（见 [`process_sandbox/__init__.py`](https://github.com/AstrBotDevs/AstrBot/blob/master/astrbot/core/computer/process_sandbox/__init__.py)）。Verter-Bot 需要补上 Windows。
 
-- `python -m verter run` starts, loads config, shuts down cleanly on SIGINT
-- Unit test: event put → EventBus → noop pipeline stage → done
+### 6.1 调用链
 
-### Phase 1 — Pipeline + Stars (command bot)
+```mermaid
+sequenceDiagram
+  participant LLM as LLM
+  participant Agent as AgentRunner
+  participant Tools as FunctionToolManager
+  participant Client as SandboxClient
+  participant Runner as verter-sandbox
+  LLM->>Agent: tool_call shell_exec
+  Agent->>Tools: check permission and policy
+  Tools->>Client: exec request
+  Client->>Runner: NDJSON exec
+  Runner-->>Client: stdout and stderr chunks
+  Runner-->>Client: exit code and resource usage
+  Client-->>Agent: truncated result
+  Agent->>LLM: tool result
+```
 
-Deliverables:
+- 提供给 Agent 的工具：`shell_exec`、`python_exec`、`fs_read`、`fs_write`、`fs_list`。所有路径都相对于会话工作区。
+- 协议：Rust 类型通过 schemars 导出 JSON Schema，再生成 Python 模型；CI 检查两边是否一致。
 
-- Stage ABC, scheduler (onion model), stage order registration
-- Message components + `MessageEventResult`
-- Star base, handler registry, filters: `command`, `regex`, `permission`, `event_message_type`, `platform`
-- Decorators: `@register_command`, `@register_regex`, `@on_verter_loaded`, `@after_message_sent`
-- Builtin commands: `/help`, `/echo`, `/sid`
-- Waking / whitelist / rate limit / process(star) / decorate / respond stages
-- PluginManager: scan `data/plugins`, import, register metadata (`metadata.yaml`), enable/disable, **hot-reload** one plugin
+### 6.2 安全策略
 
-Acceptance:
+| 维度 | 默认值 |
+|------|--------|
+| 文件系统 | 系统目录只读；会话工作区 `data/workspaces/<会话哈希>/` 可写；其余位置不可写 |
+| 网络 | 默认禁止，可按策略开放 |
+| 资源 | 墙钟超时、CPU 时间、内存、进程数、输出大小均有上限；超时会结束整个进程树 |
+| 环境变量 | 启动时清空，只注入白名单变量；API Key 不能进入沙箱 |
+| 调用权限 | 默认仅管理员会话可用，可按会话白名单放开 |
+| 审计 | 每次调用记录会话、发起人、命令、耗时、退出码和截断后的输出，存入 SQLite，可在 WebUI 查看 |
 
-- Console: `/echo hi` replies
-- Drop a sample plugin into `data/plugins`, `/plugin reload name` works without process restart
-- Rate limit drops floods for same UMO
+### 6.3 Linux 后端
 
-### Phase 2 — Platforms: OneBot v11 + Telegram
+- 首选 bubblewrap：隔离 user / pid / net / mount / ipc 命名空间，开启 `--die-with-parent` 与 `--new-session`，系统目录只读挂载，`/tmp` 使用 tmpfs。
+- 在此之上设置 `no_new_privs`，并用 seccomp 禁止 ptrace、io_uring 等调用；网络关闭时同时禁止建立连接。
+- 资源限制使用 rlimit；如果 cgroup v2 已委派给当前用户，则改用 cgroup。
+- 回退：当非特权 user namespace 不可用时（部分发行版默认限制），改用 Landlock + seccomp；`verter-sandbox doctor` 负责检测并提示。
 
-Deliverables:
+### 6.4 Windows 后端
 
-- `Platform` ABC: `run`, `terminate`, `meta`, `commit_event`, `create_event`, `send_by_session`
-- **aiocqhttp** reverse WebSocket adapter (host/port/token from config); map group/private/notice → `VerterMessage`
-- **Telegram** adapter via `python-telegram-bot` (long polling first; webhook optional later)
-- PlatformManager: load from config, task-per-platform, reload/terminate by `platform_id`
-- Event fields aligned with AstrBot concepts: `unified_msg_origin`, `session_id`, `is_wake`, `role`
+- **标准模式（无需管理员）**：AppContainer 或受限令牌，配合 Job Object（内存、CPU、进程数限制，句柄关闭即结束进程树），并为工作区设置 ACL。AppContainer 在未授予网络能力时由系统强制断网；受限令牌模式只能做"建议性"的网络屏蔽，因此该模式只允许在开放网络的策略下使用。
+- **强隔离模式（需要一次性管理员初始化 `verter-sandbox setup`）**：创建专用的离线 / 在线本地用户，用防火墙规则阻断离线用户的出站流量，再叠加受限令牌和 Job Object。runner 先以沙箱用户身份启动，再创建受限令牌并启动子进程（参考 Codex 公开的设计）。
+- 默认模式由 S0 技术验证决定：在 windows-latest 上测试 python、powershell、cmd、git 在 AppContainer 下的兼容性和隔离效果。
 
-Acceptance:
+### 6.5 Docker 后端（可选，两个系统通用）
 
-- NapCat / Lagrange / other OneBot client connects; bot replies in QQ group when woken
-- Telegram bot replies in private and group (group requires wake/@)
-- Dashboard or logs show adapter online/offline
+每个会话一个容器，用于把沙箱开放给群聊中非管理员用户的场景，对应 AstrBot 的 Shipyard 方案。
 
-### Phase 3 — Provider + conversations (chat bot)
+### 6.6 安全测试集
 
-Deliverables:
+在 ubuntu-latest 和 windows-latest 上运行，覆盖：
 
-- `Provider` ABC: `text_chat`, optional `text_chat_stream`
-- OpenAI-compatible source (base_url + api_key + model) covering OpenAI / DeepSeek / Ollama / OneAPI
-- ProviderManager: list, default provider, switch, test connection
-- ConversationManager: create/switch/delete/get history; persist in SQLite
-- ProcessStage: after Stars, if wake and no terminal plugin reply → LLM
-- Session lock around LLM; context window trim (max messages / tokens estimate)
-- Builtin: `/reset`, `/provider`, `/model` (admin)
+- 越界写入、读取敏感文件
+- 外网连接
+- fork 炸弹、内存炸弹
+- 超时
+- 超时后孙进程是否仍然存活
+- 环境变量泄露
 
-Acceptance:
+## 7. WebUI（严格遵循 shadcn 规范）
 
-- Wake in QQ/Telegram → LLM reply with history continuity
-- Concurrent users do not mix contexts
-- Stream path optional: if platform supports, stream chunks; else buffer then send
+### 7.1 初始化
 
-### Phase 4 — Dashboard (simple WebUI)
+使用 `shadcn init -t vite` 初始化。shadcn 自 2026 年 7 月起新项目默认使用 Base UI（[changelog](https://ui.shadcn.com/docs/changelog/2026-07-base-ui-default)），本项目跟随默认；Radix 仍受完整支持，只需加上 `-b radix`。主题统一用 CSS 变量定义 token，提供亮、暗两套。
 
-Deliverables:
+### 7.2 硬性规则
 
-- FastAPI app (port configurable, default e.g. 6185)
-- Auth: single admin user + password from config (JWT or signed cookie)
-- Pages/APIs:
-  - Status: uptime, queue depth, platforms, providers
-  - Config view/edit (safe subset)
-  - Platforms: list / enable / reload
-  - Providers: list / test / set default
-  - Plugins: list / enable / disable / reload / upload zip (optional)
-  - Logs: recent ring buffer SSE or poll
-- Minimal frontend: server-rendered Jinja **or** small Vite SPA; keep UI thin
+1. `src/components/ui/` 只能通过 shadcn CLI 或 MCP 写入，不手写基础组件。定制通过 CSS 变量和组合完成；确实需要修改组件内部时，必须在 PR 中说明原因。
+2. 业务组件只能组合 `components/ui` 中的组件。用 ESLint `no-restricted-imports` 禁止引入其他 UI 库，并禁止在 `components/ui` 以外直接导入 Base UI / Radix 原语。
+3. 颜色、圆角、阴影只能使用主题 token，禁止硬编码色值和任意值颜色。
+4. 图标只用 lucide。
+5. 固定搭配：表单用 shadcn Field + react-hook-form + zod，表格用 shadcn Data Table（TanStack Table），图表用 shadcn Chart，通知用 Sonner，布局用 shadcn Sidebar block。
+6. 每个页面都必须覆盖加载、空数据、错误三种状态，支持键盘操作、亮暗主题和中英文。
 
-Acceptance:
+### 7.3 页面清单
 
-- Fresh install: open Dashboard, login, see adapters and set API key without editing YAML by hand
-- Reload plugin from UI reflected in runtime
+页面与阶段绑定交付：登录、概览（指标）、平台、模型提供商、插件、会话与人格、沙箱（策略、审计、实时输出）、日志、设置。
 
-### Phase 5 — Hardening + performance pass
+### 7.4 AI 辅助开发
 
-Deliverables:
+- 启用 [shadcn MCP Server](https://ui.shadcn.com/docs/mcp) 和 [shadcn Skill](https://ui.shadcn.com/docs/skills)。Skill 通过 `shadcn info --json` 读取项目配置，让代理先查组件和示例，再写代码。
+- PR 使用 shadcn MCP 提供的审计清单（`get_audit_checklist`）自检。
 
-- Integration tests with mocked OneBot/Telegram events
-- Load test: synthetic EventBus flood (e.g. 1k events) — measure p95 pipeline latency without LLM
-- Graceful shutdown: drain or cancel in-flight pipeline tasks with timeout
-- Content safety + whitelist wired to config
-- Error hooks: `OnPluginError`; user-facing short error when wake command fails
-- Docs: deploy (uv / Docker), plugin authoring guide, config reference
+### 7.5 API 契约
 
-Acceptance:
+由 FastAPI 的 OpenAPI 文档生成 TypeScript 客户端和 TanStack Query hooks；CI 检查生成物是否过期。
 
-- CI: lint + unit + integration green
-- Documented Docker Compose: Verter + optional NapCat sidecar sketch
-- README quickstart for QQ + Telegram + OpenAI-compatible key
+## 8. 质量保障体系
 
-## Config sketch (MVP)
+| 目标 | 机制 |
+|------|------|
+| 开发效率 | monorepo + `just` 统一命令（`just dev` 同时启动带模拟平台的后端和 Vite）；接口代码全部生成，不手写同步；模拟 OneBot、Telegram、LLM 服务，开发不依赖真实账号 |
+| 运行性能 | CI 基准测试 + 性能预算，回归超阈值即失败（见 8.2） |
+| 产品质量 | 契约优先、静态检查、分层测试、垂直切片交付（见 8.1、8.3） |
+| 设计风格 | shadcn 规则与 lint、视觉回归、无障碍检查（见第 7 节和 8.4） |
+
+### 8.1 契约与静态检查
+
+- 三份契约：后端与 WebUI 之间的 OpenAPI，Python 与 Rust 之间的 JSON Schema，以及插件 API 文档。
+- Python：ruff + pyright（`verter/core` 使用 strict）。
+- TypeScript：strict + ESLint + Prettier。
+- Rust：clippy `-D warnings` + rustfmt + cargo-deny。
+
+### 8.2 性能预算
+
+以下是初始目标，P1 或 S0 测出基线后锁定为回归阈值（劣化超过 10% 即失败）：
+
+- 分发层：handler 数从 100 增加到 5000 时，未唤醒消息的分发耗时增长小于 10%。
+- 端到端（不含 LLM 和网络）：单条指令消息处理 p99 小于 1 ms。
+- 空载内存（OneBot + Telegram，无插件）：RSS 小于 80 MB。
+- 冷启动到可接收消息：小于 2 秒。
+- 沙箱执行一次 `echo` 的额外开销：Linux 小于 50 ms，Windows 小于 200 ms。
+- WebUI 首屏 JS（gzip 后）：小于 250 KB。
+
+### 8.3 测试分层
+
+- 单元测试：pytest、Vitest、cargo test。
+- 集成测试：模拟 OneBot 客户端、Telegram API 和 LLM 服务。
+- 端到端：Playwright 驱动 WebUI，连接后端和模拟平台。
+- 沙箱安全测试：见 6.6。
+- 覆盖率门槛：Python 核心 85%，沙箱 crate 80%。
+
+### 8.4 设计一致性
+
+- Playwright 视觉回归：关键页面 × 亮 / 暗 × 中 / 英。
+- axe-core 无障碍检查。
+- PR 模板包含 UI 自检清单：三态、键盘操作、主题、文案。
+
+### 8.5 流程
+
+- 每个阶段是一个垂直切片：后端、API、WebUI 页面、测试、文档一起交付，并有明确的验收标准。
+- 使用 Conventional Commits。
+- 所有 PR 必须在 Linux 和 Windows 上 CI 全绿。
+
+## 9. 阶段计划
+
+### P0 基建与质量门禁
+
+- 交付：monorepo 骨架；CI 矩阵（ubuntu + windows，Python 3.12 / 3.13）；三种语言的 lint、类型检查和测试；两条代码生成流水线；基准测试框架；shadcn 初始化、主题 token、AppShell 和登录页。
+- 验收：`just check` 在两个系统上全绿；WebUI 空壳在亮暗主题下通过视觉快照。
+
+### P1 核心运行时（同步进行 S0 沙箱技术验证）
+
+- 交付：消息模型、EventBus、9 个流水线阶段、Star 插件系统、HandlerIndex、热加载、控制台调试适配器、内置指令、指标；WebUI 概览页和插件页。
+- S0：Linux bubblewrap 原型；Windows AppContainer 与受限令牌两种原型的对比报告。
+- 验收：控制台跑通指令；热加载无需重启进程；基准测试满足 8.2 中的分发层目标，基线写入仓库；S0 报告确定 Windows 默认模式。
+
+### P2 平台适配
+
+- 交付：OneBot v11（反向 + 正向 WebSocket）、Telegram（长轮询）、PlatformManager；WebUI 平台页。
+- 验收：NapCat 群聊和私聊收发正常；Telegram 私聊和群聊正常；断线可重连；模拟客户端集成测试通过。
+
+### P3 模型与会话
+
+- 交付：OpenAI 兼容 Provider（流式、工具调用、多 Key 轮换、重试）、ProviderManager、会话管理、人格、工具循环 Agent；WebUI 提供商、会话、人格页。
+- 验收：多用户并发时上下文不串；工具调用循环在模拟 LLM 下通过；连接测试按钮可用。
+
+### P4 沙箱
+
+- 交付：`verter-sandbox` 的 Linux 与 Windows 后端、SandboxClient、ComputerBooter、Agent 工具、审计；可选 Docker 后端；WebUI 沙箱页。
+- 验收：6.6 的安全测试集在 ubuntu-latest 和 windows-latest 上全部通过；Agent 能在会话工作区内执行 Python 和 Shell 并返回结果；未授权会话的调用被拒绝并记入审计。
+
+### P5 发布与加固
+
+- 交付：Docker 镜像；Windows 便携包（内含 `verter-sandbox.exe`）；Rust 二进制以平台 wheel 形式随 Python 包分发；压力测试与长时间稳定性测试；部署、插件开发、沙箱安全模型文档。
+- 验收：在全新的 Linux 和 Windows 机器上按文档部署成功；发布流水线产出多平台产物。
+
+## 10. 配置示意
 
 ```yaml
 wake_prefix: ["/"]
 admins_id: ["your_qq_or_tg_id"]
-platform_settings:
-  friend_message_needs_wake_prefix: false
-  ignore_bot_self_message: true
-  rate_limit:
-    type: "window"
-    count: 8
-    time: 60
 platform:
-  - id: qq_main
-    type: aiocqhttp
-    enable: true
-    ws_reverse_host: "0.0.0.0"
-    ws_reverse_port: 6199
-  - id: tg_main
-    type: telegram
-    enable: true
-    token: "ENV:TELEGRAM_BOT_TOKEN"
+  - { id: qq_main, type: onebot_v11, enable: true, ws_reverse_host: "0.0.0.0", ws_reverse_port: 6199, access_token: "ENV:ONEBOT_TOKEN" }
+  - { id: tg_main, type: telegram, enable: true, token: "ENV:TELEGRAM_BOT_TOKEN" }
 provider:
-  - id: openai_main
-    type: openai_chat_completion
-    enable: true
-    api_key: "ENV:OPENAI_API_KEY"
-    api_base: "https://api.openai.com/v1"
-    model: "gpt-4o-mini"
-provider_settings:
+  - { id: openai_main, type: openai_compat, api_base: "https://api.openai.com/v1", api_keys: ["ENV:OPENAI_API_KEY"], model: "gpt-4o-mini", max_concurrency: 8 }
+provider_settings: { enable: true, default_provider_id: openai_main, max_context_messages: 40 }
+runtime: { max_pending_events: 10000, workers: 64, event_timeout_s: 300 }
+computer:
   enable: true
-  default_provider_id: openai_main
-  max_context_messages: 40
-dashboard:
-  enable: true
-  host: "0.0.0.0"
-  port: 6185
-  username: admin
-  password: change_me
+  backend: local            # local | docker
+  allow: admins             # admins | whitelist | all
+  network: deny             # deny | allow
+  windows_mode: auto        # auto | standard | isolated
+  limits: { timeout_s: 60, cpu_s: 30, memory_mb: 512, max_procs: 64, output_kb: 64 }
+dashboard: { enable: true, host: "127.0.0.1", port: 6185 }
 plugin_set: ["*"]
 ```
 
-## Plugin API (target DX)
-
-```python
-from verter.api import Star, register_command, register_star
-
-@register_star(name="hello", desc="sample", version="0.1.0")
-class Hello(Star):
-    @register_command("hello")
-    async def hello(self, event, name: str = "world"):
-        yield event.plain_result(f"hello, {name}")
-```
-
-Compatibility goal: **conceptually** close to AstrBot Star API so authors can port plugins with small renames (`astrbot` → `verter`), not binary API compatibility.
-
-## Mapping to AstrBot modules
+## 11. 模块对照
 
 | AstrBot | Verter-Bot |
 |---------|------------|
-| `core_lifecycle.py` | `core/lifecycle.py` |
-| `event_bus.py` | `core/event_bus.py` |
-| `pipeline/*` | `core/pipeline/*` |
-| `platform/*` | `core/platform/*` |
-| `star/*` | `core/star/*` |
-| `provider/*` | `core/provider/*` |
-| `conversation_mgr.py` | `core/conversation.py` |
-| `dashboard/*` | `dashboard/*` |
-| `builtin_stars/*` | `builtin_stars/*` |
+| `core/core_lifecycle.py` | `verter/core/core_lifecycle.py` |
+| `core/event_bus.py` | `verter/core/event_bus.py` |
+| `core/pipeline/*` | `verter/core/pipeline/*` |
+| `core/platform/*` | `verter/core/platform/*` |
+| `core/star/*` | `verter/core/star/*`（新增 HandlerIndex） |
+| `core/provider/*` | `verter/core/provider/*` |
+| `core/computer/*` | `verter/core/computer/*` + `sandbox/`（Rust） |
+| `core/conversation_mgr.py` | `verter/core/conversation_mgr.py` |
+| `dashboard/`（Vue + Vuetify） | `verter/dashboard/`（FastAPI）+ `webui/`（React + shadcn） |
+| `builtin_stars/*` | `verter/builtin_stars/*` |
 
-## Risks and constraints
+## 12. 风险
 
-1. **AGPL contamination** — never paste AstrBot code; reimplement from behavior notes in this plan.
-2. **OneBot ecosystem variance** — NapCat / Lagrange / go-cqhttp differ; stick to OneBot v11 message + send API; test with one primary client (recommend NapCat).
-3. **Telegram group privacy** — bot must be group admin or privacy mode disabled for non-command messages; document this.
-4. **Scope creep** — KB / MCP / sandbox explicitly deferred; reject feature PRs that block MVP.
-5. **Hot reload** — Python `sys.modules` eviction is brittle; define clear unload contract (handlers, platform registrations, background tasks).
+1. AGPL 污染：禁止复制 AstrBot 代码，只按行为描述自行实现。
+2. Windows 沙箱复杂度高：S0 先验证再定方案；强隔离模式需要管理员初始化，必须在文档中说清楚。
+3. bubblewrap 在部分发行版上受 user namespace 限制：用 Landlock + seccomp 或 Docker 回退，并由 `doctor` 命令检测。
+4. OneBot 实现之间存在差异：以 NapCat 为主测对象，只依赖 OneBot v11 标准接口。
+5. Telegram 群组隐私模式：机器人默认收不到非指令消息，需要在文档中说明设置方法。
+6. 插件热加载的模块卸载不一定干净：明确卸载契约（handler、平台注册、后台任务），并编写测试。
+7. 范围蔓延：MVP 之外的功能不得阻塞当前阶段。
 
-## Milestone checklist
+## 附录 A：分发成本模拟测量
 
-- [ ] Phase 0 scaffold + console adapter
-- [ ] Phase 1 pipeline + stars + hot-reload
-- [ ] Phase 2 OneBot + Telegram
-- [ ] Phase 3 Provider + conversations
-- [ ] Phase 4 Dashboard
-- [ ] Phase 5 tests, Docker, docs
+方法：纯 asyncio（未启用 uvloop），单进程，16 个 worker，10 万条消息，测量范围仅限分发层。
 
-## Immediate next implementation step
+- 逐个扫描：每条消息重建候选列表，并逐个调用 handler 的过滤器对象；未唤醒消息提前返回，已唤醒消息做空白规整和前缀匹配。
+- 索引分发：未唤醒消息直接拒绝，已唤醒消息取首词做一次字典查找。
 
-After this plan is approved: implement **Phase 0 + Phase 1** on branch, with console adapter and sample plugin, so structure and performance skeleton are reviewable before wiring QQ/Telegram.
+结果（唤醒比例 10%）：
+
+| handler 数 | 索引分发（事件/秒） | 逐个扫描（事件/秒） |
+|-----------|-------------------|-------------------|
+| 10 | 约 120 万 | 约 25 万 |
+| 100 | 约 116 万 | 约 3.4 万 |
+| 1000 | 约 120 万 | 约 3,500 |
+| 5000 | 约 115 万 | 约 700 |
+
+这是对成本结构的模拟，不是对 AstrBot 的实测。正式对比放在 P1 的基准测试中完成。

@@ -1,28 +1,25 @@
 # Verter-Bot
 
-High-performance multi-platform LLM bot framework, structured after [AstrBot](https://github.com/AstrBotDevs/AstrBot) (independent implementation, not a fork).
+参考 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 架构的高性能多平台 LLM 机器人框架（独立实现，非 fork）。
 
-## MVP scope
+## 技术栈
 
-- **Platforms:** OneBot v11 (QQ) + Telegram
-- **Core:** EventBus → Pipeline (onion stages) → Stars (plugins) → Provider (OpenAI-compatible)
-- **Ops:** Plugin hot-reload, Provider manager, simple WebUI Dashboard
+| 组件 | 技术 |
+|------|------|
+| 核心运行时 | Python 3.12+，asyncio（Linux 上启用 uvloop） |
+| 本地沙箱 | Rust（`verter-sandbox`，支持 Linux 与 Windows） |
+| WebUI | TypeScript + React + Tailwind CSS v4 + shadcn/ui |
 
-## Status
+## MVP 范围
 
-Planning complete. See [docs/DEV_PLAN.md](docs/DEV_PLAN.md) for architecture, package layout, performance rules, and phased milestones.
+- 平台：OneBot v11（QQ）+ Telegram
+- 核心：EventBus → Pipeline（洋葱模型）→ Star 插件 / Provider（OpenAI 兼容）
+- 运维：插件热加载、Provider 管理、WebUI、可被 Agent 调用的本地沙箱
 
-## Phases (summary)
+## 状态
 
-| Phase | Focus |
-|-------|--------|
-| 0 | Scaffold, config, lifecycle, console adapter |
-| 1 | Pipeline + Stars + hot-reload |
-| 2 | OneBot v11 + Telegram adapters |
-| 3 | LLM Provider + conversation history |
-| 4 | Dashboard WebUI |
-| 5 | Tests, Docker, hardening |
+目前处于规划阶段。架构、语言选型、性能设计、沙箱安全模型、shadcn 规范、质量体系和分阶段计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
 
-## License note
+## 许可证说明
 
-AstrBot is AGPL-3.0. Verter-Bot must not copy AstrBot source; only architectural patterns are referenced.
+AstrBot 使用 AGPL-3.0。Verter-Bot 不复制 AstrBot 源码，只参考其架构。
