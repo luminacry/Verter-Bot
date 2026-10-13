@@ -12,7 +12,12 @@ use crate::apply::{ApplyOptions, helper_args};
 /// # Errors
 ///
 /// Returns an error when `bwrap` cannot be spawned.
-pub fn spawn(bwrap: &Path, helper: &Path, opts: &ApplyOptions) -> Result<std::process::Child> {
+pub fn spawn(
+    bwrap: &Path,
+    helper: &Path,
+    opts: &ApplyOptions,
+    piped: bool,
+) -> Result<std::process::Child> {
     if !bwrap.is_file() {
         bail!("bubblewrap executable is missing");
     }
@@ -61,6 +66,7 @@ pub fn spawn(bwrap: &Path, helper: &Path, opts: &ApplyOptions) -> Result<std::pr
     let mut inner = opts.clone();
     inner.mode = crate::probe::Backend::Bubblewrap;
     command.arg("/sandbox-apply").args(helper_args(&inner));
+    crate::exec::apply_stdio(&mut command, piped);
     command.spawn().context("spawn bubblewrap")
 }
 

@@ -5,14 +5,18 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr;
 
-use anyhow::Error;
+use anyhow::{Error, Result, bail};
 use windows_sys::Win32::Foundation::{
-    GetLastError, HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation,
+    CloseHandle, FALSE, GetLastError, HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE,
+    SetHandleInformation, TRUE,
 };
+use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+use windows_sys::Win32::Storage::FileSystem::ReadFile;
 use windows_sys::Win32::System::Console::{
     GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
-use windows_sys::Win32::System::Threading::STARTUPINFOW;
+use windows_sys::Win32::System::Pipes::{CreatePipe, PeekNamedPipe};
+use windows_sys::Win32::System::Threading::{STARTF_USESTDHANDLES, STARTUPINFOW};
 
 /// `FILE_ALL_ACCESS` from `winnt.h`.
 pub const FILE_ALL_ACCESS: u32 = 0x001F_01FF;
@@ -128,18 +132,107 @@ pub fn environment_block(workspace: &Path) -> Vec<u16> {
     block
 }
 
+/// Standard handles to install on a suspended child via `STARTF_USESTDHANDLES`.
+#[derive(Clone, Copy)]
+pub struct StartupStdio {
+    /// Child stdin.
+    pub input: HANDLE,
+    /// Child stdout.
+    pub output: HANDLE,
+    /// Child stderr.
+    pub error: HANDLE,
+}
+
+impl StartupStdio {
+    /// Inherit this process's standard handles (CLI `exec`).
+    #[must_use]
+    pub fn inherit() -> Self {
+        let (input, output, error) = std_handles();
+        Self {
+            input,
+            output,
+            error,
+        }
+    }
+
+    pub fn apply_to(self, startup: &mut STARTUPINFOW) {
+        if usable(self.input) && usable(self.output) && usable(self.error) {
+            startup.dwFlags |= STARTF_USESTDHANDLES;
+            startup.hStdInput = self.input;
+            startup.hStdOutput = self.output;
+            startup.hStdError = self.error;
+        }
+    }
+}
+
+/// Anonymous pipes so a `serve` child cannot write onto the NDJSON stdout.
+pub struct AnonymousPipes {
+    /// Handles the child should inherit.
+    pub child: StartupStdio,
+    stdout_read: HANDLE,
+    stderr_read: HANDLE,
+}
+
+impl AnonymousPipes {
+    /// Create stdin (EOF), stdout, and stderr pipes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a pipe cannot be created.
+    pub fn new() -> Result<Self> {
+        let (stdin_read, stdin_write) = create_pipe(true, false)?;
+        // Parent will not write to child stdin; close the write end so the child sees EOF.
+        close_handle(stdin_write);
+        let (stdout_read, stdout_write) = create_pipe(false, true)?;
+        let (stderr_read, stderr_write) = create_pipe(false, true)?;
+        Ok(Self {
+            child: StartupStdio {
+                input: stdin_read,
+                output: stdout_write,
+                error: stderr_write,
+            },
+            stdout_read,
+            stderr_read,
+        })
+    }
+
+    /// Close the parent's copies of the child's pipe ends after `CreateProcessW`.
+    pub fn close_child_ends(&mut self) {
+        close_handle(self.child.input);
+        close_handle(self.child.output);
+        close_handle(self.child.error);
+        self.child.input = ptr::null_mut();
+        self.child.output = ptr::null_mut();
+        self.child.error = ptr::null_mut();
+    }
+
+    pub fn drain(&self, on_chunk: &mut dyn FnMut(bool, &[u8])) {
+        drain_available(self.stdout_read, false, on_chunk);
+        drain_available(self.stderr_read, true, on_chunk);
+    }
+
+    pub fn read_to_end(&self, on_chunk: &mut dyn FnMut(bool, &[u8])) {
+        read_remaining(self.stdout_read, false, on_chunk);
+        read_remaining(self.stderr_read, true, on_chunk);
+    }
+}
+
+impl Drop for AnonymousPipes {
+    fn drop(&mut self) {
+        self.close_child_ends();
+        close_handle(self.stdout_read);
+        close_handle(self.stderr_read);
+        self.stdout_read = ptr::null_mut();
+        self.stderr_read = ptr::null_mut();
+    }
+}
+
 pub fn startup_with_stdio() -> STARTUPINFOW {
-    let (input, output, error) = std_handles();
     let mut startup = STARTUPINFOW {
         cb: u32::try_from(size_of::<STARTUPINFOW>()).unwrap_or(0),
         ..STARTUPINFOW::default()
     };
-    if usable(input) && usable(output) && usable(error) {
-        startup.dwFlags |= windows_sys::Win32::System::Threading::STARTF_USESTDHANDLES;
-        startup.hStdInput = input;
-        startup.hStdOutput = output;
-        startup.hStdError = error;
-    }
+    StartupStdio::inherit().apply_to(&mut startup);
     startup
 }
 
@@ -161,6 +254,118 @@ fn std_handles() -> (HANDLE, HANDLE, HANDLE) {
 
 fn usable(handle: HANDLE) -> bool {
     !handle.is_null() && handle != INVALID_HANDLE_VALUE
+}
+
+fn create_pipe(inherit_read: bool, inherit_write: bool) -> Result<(HANDLE, HANDLE)> {
+    let mut security = SECURITY_ATTRIBUTES {
+        nLength: u32::try_from(size_of::<SECURITY_ATTRIBUTES>()).unwrap_or(0),
+        lpSecurityDescriptor: ptr::null_mut(),
+        bInheritHandle: TRUE,
+    };
+    let mut read = ptr::null_mut();
+    let mut write = ptr::null_mut();
+    // SAFETY: `read` and `write` are live out pointers; `security` is a valid attributes block.
+    let created = unsafe { CreatePipe(&raw mut read, &raw mut write, &raw mut security, 0) };
+    if created == FALSE {
+        bail!(last_error("CreatePipe"));
+    }
+    if let Err(err) = set_inherit(read, inherit_read) {
+        close_handle(read);
+        close_handle(write);
+        return Err(err);
+    }
+    if let Err(err) = set_inherit(write, inherit_write) {
+        close_handle(read);
+        close_handle(write);
+        return Err(err);
+    }
+    Ok((read, write))
+}
+
+fn set_inherit(handle: HANDLE, inherit: bool) -> Result<()> {
+    let mask = HANDLE_FLAG_INHERIT;
+    let flags = if inherit { HANDLE_FLAG_INHERIT } else { 0 };
+    // SAFETY: `handle` is an open pipe end from `CreatePipe`.
+    let ok = unsafe { SetHandleInformation(handle, mask, flags) };
+    if ok == FALSE {
+        bail!(last_error("SetHandleInformation"));
+    }
+    Ok(())
+}
+
+fn close_handle(handle: HANDLE) {
+    if usable(handle) {
+        // SAFETY: `handle` is open and is closed once by the caller.
+        unsafe {
+            CloseHandle(handle);
+        }
+    }
+}
+
+fn drain_available(handle: HANDLE, is_err: bool, on_chunk: &mut dyn FnMut(bool, &[u8])) {
+    if !usable(handle) {
+        return;
+    }
+    loop {
+        let mut available = 0_u32;
+        // SAFETY: `handle` is the parent's non-inherited read end of an anonymous pipe.
+        let peeked = unsafe {
+            PeekNamedPipe(
+                handle,
+                ptr::null_mut(),
+                0,
+                ptr::null_mut(),
+                &raw mut available,
+                ptr::null_mut(),
+            )
+        };
+        if peeked == FALSE || available == 0 {
+            break;
+        }
+        let want = available.min(8192);
+        let mut buf = vec![0_u8; usize::try_from(want).unwrap_or(8192)];
+        let mut read = 0_u32;
+        // SAFETY: `buf` has `want` bytes and `read` is a live DWORD out pointer.
+        let ok = unsafe {
+            ReadFile(
+                handle,
+                buf.as_mut_ptr().cast(),
+                want,
+                &raw mut read,
+                ptr::null_mut(),
+            )
+        };
+        if ok == FALSE || read == 0 {
+            break;
+        }
+        let n = usize::try_from(read).unwrap_or(0);
+        on_chunk(is_err, &buf[..n]);
+    }
+}
+
+fn read_remaining(handle: HANDLE, is_err: bool, on_chunk: &mut dyn FnMut(bool, &[u8])) {
+    if !usable(handle) {
+        return;
+    }
+    let mut buf = [0_u8; 8192];
+    loop {
+        let mut read = 0_u32;
+        // SAFETY: `handle` is the parent's read end; `buf` is a live 8 KiB buffer.
+        let ok = unsafe {
+            ReadFile(
+                handle,
+                buf.as_mut_ptr().cast(),
+                8192,
+                &raw mut read,
+                ptr::null_mut(),
+            )
+        };
+        if ok == FALSE || read == 0 {
+            break;
+        }
+        let n = usize::try_from(read).unwrap_or(0);
+        on_chunk(is_err, &buf[..n]);
+    }
 }
 
 pub fn null<T>() -> *const T {

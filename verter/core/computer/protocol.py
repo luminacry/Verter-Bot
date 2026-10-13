@@ -6,7 +6,9 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 
-type BackendKind = Literal["bubblewrap"]
+type BackendKind = Literal[
+    "bubblewrap", "landlock", "appcontainer", "isolated", "restricted"
+]
 """
 Isolation backend identifiers.
 """
@@ -67,17 +69,24 @@ class Shutdown(BaseModel):
     type: Literal["shutdown"]
 
 
-type ClientMessage = Hello | Ping | Shutdown
-"""
-Messages sent by the Verter-Bot core to the runner.
-"""
-
-
 type ErrorCode = Literal[
-    "invalid_message", "handshake_required", "unsupported_protocol_version"
+    "invalid_message",
+    "handshake_required",
+    "unsupported_protocol_version",
+    "isolation_unavailable",
+    "invalid_workspace",
+    "invalid_exec",
 ]
 """
 Reasons a message can be rejected.
+"""
+
+
+type ExecBackend = Literal[
+    "auto", "bubblewrap", "landlock", "appcontainer", "isolated", "restricted"
+]
+"""
+Backend requested by [`ClientMessage::Exec`].
 """
 
 
@@ -132,6 +141,66 @@ class Pong(BaseModel):
     type: Literal["pong"]
 
 
+class ExecStdout(BaseModel):
+    """
+    One chunk of the command's standard output, base64-encoded.
+    """
+
+    chunk_b64: str
+    """
+    Standard-output bytes, standard base64 with padding.
+    """
+    id: Annotated[int, Field(ge=0)]
+    """
+    The `id` from the matching [`ClientMessage::Exec`].
+    """
+    type: Literal["exec_stdout"]
+
+
+class ExecStderr(BaseModel):
+    """
+    One chunk of the command's standard error, base64-encoded.
+    """
+
+    chunk_b64: str
+    """
+    Standard-error bytes, standard base64 with padding.
+    """
+    id: Annotated[int, Field(ge=0)]
+    """
+    The `id` from the matching [`ClientMessage::Exec`].
+    """
+    type: Literal["exec_stderr"]
+
+
+class ExecExit(BaseModel):
+    """
+    The sandboxed command has exited. Always the last message for an `exec`.
+    """
+
+    backend: BackendKind
+    """
+    Backend that actually isolated the command.
+    """
+    exit_code: int
+    """
+    Process exit code. `124` when the wall-clock limit fired.
+    """
+    id: Annotated[int, Field(ge=0)]
+    """
+    The `id` from the matching [`ClientMessage::Exec`].
+    """
+    timed_out: bool
+    """
+    True when the wall-clock limit fired and the process tree was killed.
+    """
+    type: Literal["exec_exit"]
+    wall_ms: Annotated[int, Field(ge=0)]
+    """
+    Wall-clock milliseconds from spawn until exit.
+    """
+
+
 class ErrorReply(BaseModel):
     """
     The previous message was rejected.
@@ -148,9 +217,55 @@ class ErrorReply(BaseModel):
     type: Literal["error"]
 
 
-type ServerMessage = HelloAck | Pong | ErrorReply
+type ServerMessage = HelloAck | Pong | ExecStdout | ExecStderr | ExecExit | ErrorReply
 """
 Messages sent by the runner to the Verter-Bot core.
+"""
+
+
+class Exec(BaseModel):
+    """
+    Run a command inside an isolation backend. Refusals use the error channel.
+    """
+
+    backend: ExecBackend
+    """
+    Isolation backend. `auto` never falls through to the host.
+    """
+    command: list[str]
+    """
+    Program and arguments. The first item is the executable.
+    """
+    id: Annotated[int, Field(ge=0)]
+    """
+    Correlation id echoed in stdout, stderr, and exit messages.
+    """
+    memory_bytes: Annotated[int, Field(ge=0)]
+    """
+    Address-space / job memory limit in bytes.
+    """
+    network: bool
+    """
+    When true, outbound network is requested.
+    """
+    nproc: Annotated[int, Field(ge=0)]
+    """
+    Process-count limit inside the sandbox.
+    """
+    timeout_ms: Annotated[int, Field(ge=0)]
+    """
+    Wall-clock limit in milliseconds.
+    """
+    type: Literal["exec"]
+    workspace: str
+    """
+    Writable workspace directory on the host.
+    """
+
+
+type ClientMessage = Hello | Ping | Exec | Shutdown
+"""
+Messages sent by the Verter-Bot core to the runner.
 """
 
 

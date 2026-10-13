@@ -1,7 +1,7 @@
 //! Job Object limits and process-tree kill.
 
 use std::ptr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE, WAIT_TIMEOUT};
@@ -101,12 +101,51 @@ pub fn wait(process: HANDLE, job: &Job, timeout: Duration) -> Result<(Option<u32
     let waited = unsafe { WaitForSingleObject(process, millis) };
     let timed_out = waited == WAIT_TIMEOUT;
     if timed_out {
-        // SAFETY: `job.0` is the job that owns the process tree.
-        unsafe {
-            TerminateJobObject(job.0, 1);
-            WaitForSingleObject(process, 5_000);
+        terminate(job, process);
+    }
+    exit_code(process, timed_out)
+}
+
+/// Wait in short slices so the caller can drain stdout/stderr pipes.
+///
+/// # Errors
+///
+/// Returns an error when the exit code cannot be read.
+pub fn wait_polling(
+    process: HANDLE,
+    job: &Job,
+    timeout: Duration,
+    mut tick: impl FnMut(),
+) -> Result<(Option<u32>, bool)> {
+    let started = Instant::now();
+    loop {
+        tick();
+        let remaining = timeout.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            terminate(job, process);
+            tick();
+            return exit_code(process, true);
+        }
+        let slice = remaining.min(Duration::from_millis(15));
+        let millis = u32::try_from(slice.as_millis()).unwrap_or(15);
+        // SAFETY: `process` is an open process handle.
+        let waited = unsafe { WaitForSingleObject(process, millis) };
+        if waited != WAIT_TIMEOUT {
+            tick();
+            return exit_code(process, false);
         }
     }
+}
+
+fn terminate(job: &Job, process: HANDLE) {
+    // SAFETY: `job.0` is the job that owns the process tree.
+    unsafe {
+        TerminateJobObject(job.0, 1);
+        WaitForSingleObject(process, 5_000);
+    }
+}
+
+fn exit_code(process: HANDLE, timed_out: bool) -> Result<(Option<u32>, bool)> {
     let mut code = 0_u32;
     // SAFETY: `code` is a live `u32` and `process` is still open.
     let ok = unsafe { GetExitCodeProcess(process, &raw mut code) };

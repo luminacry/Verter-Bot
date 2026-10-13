@@ -15,13 +15,13 @@ use windows_sys::Win32::Security::{
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
     DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
-    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_INFORMATION, STARTUPINFOEXW,
+    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_INFORMATION, STARTUPINFOEXW, STARTUPINFOW,
     UpdateProcThreadAttribute,
 };
 
 use crate::util::{
-    SE_GROUP_ENABLED, command_line, environment_block, last_error, null, null_mut,
-    startup_with_stdio, wide,
+    SE_GROUP_ENABLED, StartupStdio, command_line, environment_block, last_error, null, null_mut,
+    wide,
 };
 
 const PROFILE: &str = "verter.sandbox";
@@ -115,6 +115,7 @@ pub fn spawn_suspended(
     workspace: &std::path::Path,
     network: bool,
     sid: PSID,
+    stdio: StartupStdio,
 ) -> Result<Spawned> {
     let capability = if network {
         Some(internet_client()?)
@@ -132,9 +133,13 @@ pub fn spawn_suspended(
         Reserved: 0,
     };
     let mut startup = STARTUPINFOEXW {
-        StartupInfo: startup_with_stdio(),
+        StartupInfo: STARTUPINFOW {
+            cb: u32::try_from(size_of::<STARTUPINFOEXW>()).unwrap_or(0),
+            ..STARTUPINFOW::default()
+        },
         lpAttributeList: null_mut(),
     };
+    stdio.apply_to(&mut startup.StartupInfo);
     startup.StartupInfo.cb = u32::try_from(size_of::<STARTUPINFOEXW>()).unwrap_or(0);
     let mut list_bytes = 0_usize;
     // SAFETY: a null list with a live size pointer is the documented size query.

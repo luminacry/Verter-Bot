@@ -7,6 +7,7 @@ The runner speaks newline-delimited JSON over stdio; message types live in
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import os
 import shutil
@@ -23,6 +24,11 @@ from verter.core.computer.protocol import (
     BackendStatus,
     ClientMessage,
     ErrorReply,
+    Exec,
+    ExecBackend,
+    ExecExit,
+    ExecStderr,
+    ExecStdout,
     Hello,
     HelloAck,
     Ping,
@@ -31,9 +37,10 @@ from verter.core.computer.protocol import (
     Shutdown,
 )
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 ENV_RUNNER_BIN = "VERTER_SANDBOX_BIN"
 RUNNER_NAME = "verter-sandbox"
+DEFAULT_OUTPUT_LIMIT = 64 * 1024
 
 _EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -52,6 +59,19 @@ class RunnerStatus:
     version: str | None = None
     backends: tuple[BackendStatus, ...] = ()
     error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExecResult:
+    """Collected output of one sandboxed ``exec``."""
+
+    exit_code: int
+    timed_out: bool
+    backend: str
+    wall_ms: int
+    stdout: bytes
+    stderr: bytes
+    truncated: bool
 
 
 def resolve_runner_binary() -> Path | None:
@@ -77,6 +97,7 @@ class SandboxClient:
         self._binary = binary
         self._timeout = timeout
         self._proc: asyncio.subprocess.Process | None = None
+        self._next_id = 1
 
     async def __aenter__(self) -> Self:
         return self
@@ -121,6 +142,71 @@ class SandboxClient:
         if not isinstance(reply, Pong) or reply.nonce != nonce:
             raise RunnerError(f"unexpected reply to ping: {_describe(reply)}")
 
+    async def exec(
+        self,
+        command: list[str],
+        *,
+        workspace: Path,
+        backend: ExecBackend = "auto",
+        network: bool = False,
+        timeout_ms: int = 30_000,
+        memory_bytes: int = 512 * 1024 * 1024,
+        nproc: int = 256,
+        output_limit: int = DEFAULT_OUTPUT_LIMIT,
+    ) -> ExecResult:
+        """Run ``command`` inside the sandbox and collect streamed output.
+
+        Isolation refusals are raised as :class:`RunnerError`. The command is never
+        executed on the host.
+
+        Raises:
+            RunnerError: If the runner is down, the protocol is violated, or isolation
+                refuses the request.
+        """
+        exec_id = self._next_id
+        self._next_id += 1
+        await self._send(
+            Exec(
+                type="exec",
+                id=exec_id,
+                command=command,
+                workspace=str(workspace),
+                backend=backend,
+                network=network,
+                timeout_ms=timeout_ms,
+                memory_bytes=memory_bytes,
+                nproc=nproc,
+            )
+        )
+        stdout = bytearray()
+        stderr = bytearray()
+        truncated = False
+        read_timeout = max(self._timeout, timeout_ms / 1000.0 + 5.0)
+        while True:
+            reply = await self._recv(wait_s=read_timeout)
+            if isinstance(reply, ErrorReply):
+                raise RunnerError(_describe(reply))
+            if isinstance(reply, ExecStdout):
+                chunk = _decode_chunk(reply.chunk_b64)
+                truncated = _append_limited(stdout, chunk, output_limit) or truncated
+            elif isinstance(reply, ExecStderr):
+                chunk = _decode_chunk(reply.chunk_b64)
+                truncated = _append_limited(stderr, chunk, output_limit) or truncated
+            elif isinstance(reply, ExecExit):
+                if reply.id != exec_id:
+                    raise RunnerError(f"exec_exit id {reply.id} does not match {exec_id}")
+                return ExecResult(
+                    exit_code=reply.exit_code,
+                    timed_out=reply.timed_out,
+                    backend=reply.backend,
+                    wall_ms=reply.wall_ms,
+                    stdout=bytes(stdout),
+                    stderr=bytes(stderr),
+                    truncated=truncated,
+                )
+            else:
+                raise RunnerError(f"unexpected reply to exec: {_describe(reply)}")
+
     async def close(self) -> None:
         """Ask the runner to exit, killing it if it does not comply in time."""
         proc, self._proc = self._proc, None
@@ -138,13 +224,25 @@ class SandboxClient:
             await proc.wait()
 
     async def _request(self, message: ClientMessage) -> ServerMessage:
+        await self._send(message)
+        return await self._recv(wait_s=self._timeout)
+
+    async def _send(self, message: ClientMessage) -> None:
         proc = self._proc
-        if proc is None or proc.stdin is None or proc.stdout is None:
+        if proc is None or proc.stdin is None:
             raise RunnerError("runner is not running")
         try:
             proc.stdin.write(_encode(message))
             await proc.stdin.drain()
-            line = await asyncio.wait_for(proc.stdout.readline(), self._timeout)
+        except (ConnectionError, TimeoutError) as exc:
+            raise RunnerError(f"runner did not answer: {exc!r}") from exc
+
+    async def _recv(self, *, wait_s: float) -> ServerMessage:
+        proc = self._proc
+        if proc is None or proc.stdout is None:
+            raise RunnerError("runner is not running")
+        try:
+            line = await asyncio.wait_for(proc.stdout.readline(), wait_s)
         except (ConnectionError, TimeoutError) as exc:
             raise RunnerError(f"runner did not answer: {exc!r}") from exc
         if not line:
@@ -180,3 +278,20 @@ def _describe(reply: ServerMessage) -> str:
     if isinstance(reply, ErrorReply):
         return f"{reply.code}: {reply.message}"
     return reply.type
+
+
+def _decode_chunk(chunk_b64: str) -> bytes:
+    try:
+        return base64.b64decode(chunk_b64, validate=True)
+    except ValueError as exc:
+        raise RunnerError(f"invalid exec chunk: {exc}") from exc
+
+
+def _append_limited(buf: bytearray, chunk: bytes, limit: int) -> bool:
+    if limit <= 0:
+        return bool(chunk)
+    room = limit - len(buf)
+    if room <= 0:
+        return bool(chunk)
+    buf.extend(chunk[:room])
+    return len(chunk) > room

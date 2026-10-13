@@ -9,11 +9,11 @@ use anyhow::{Context, Result, bail};
 use windows_sys::Win32::Foundation::FALSE;
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessWithLogonW,
-    LOGON_WITH_PROFILE, PROCESS_INFORMATION,
+    LOGON_WITH_PROFILE, PROCESS_INFORMATION, STARTUPINFOW,
 };
 
 use crate::appcontainer::Spawned;
-use crate::util::{command_line, environment_block, last_error, startup_with_stdio};
+use crate::util::{StartupStdio, command_line, environment_block, last_error};
 
 /// SAM account names are limited to 20 characters (`LM20_UNLEN`).
 pub const OFFLINE_USER: &str = "vsb-offline";
@@ -89,6 +89,7 @@ pub fn spawn_suspended(
     command: &[std::ffi::OsString],
     workspace: &Path,
     network: bool,
+    stdio: StartupStdio,
 ) -> Result<Spawned> {
     let (user, password_file) = if network {
         (ONLINE_USER, "online.password")
@@ -106,7 +107,11 @@ pub fn spawn_suspended(
     let user_w = crate::util::wide(user);
     let domain = crate::util::wide(".");
     let password_w = crate::util::wide(&password);
-    let startup = startup_with_stdio();
+    let mut startup = STARTUPINFOW {
+        cb: u32::try_from(size_of::<STARTUPINFOW>()).unwrap_or(0),
+        ..STARTUPINFOW::default()
+    };
+    stdio.apply_to(&mut startup);
     let mut info = PROCESS_INFORMATION::default();
     let flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW;
     // SAFETY: the wide strings and startup info are live, and the process stays suspended

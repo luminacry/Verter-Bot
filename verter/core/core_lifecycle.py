@@ -17,7 +17,8 @@ from pathlib import Path
 
 import uvicorn
 
-from verter.core.computer.runner import RunnerStatus, probe_runner, resolve_runner_binary
+from verter.core.computer.booter import ComputerBooter
+from verter.core.computer.runner import RunnerStatus
 from verter.core.config import PlatformConfig, VerterConfig
 from verter.core.db import Database
 from verter.core.event_bus import EventBus
@@ -89,6 +90,7 @@ class CoreLifecycle:
         self._server: _EmbeddedServer | None = None
         self._serve_task: asyncio.Task[None] | None = None
         self._port: int | None = None
+        self.computer: ComputerBooter | None = None
 
     @property
     def dashboard_url(self) -> str | None:
@@ -105,7 +107,7 @@ class CoreLifecycle:
             OSError: If the dashboard address cannot be bound.
             RuntimeError: If the dashboard server exits during startup.
         """
-        runner = await self._probe_sandbox()
+        runner = await self._start_sandbox()
         await self._start_runtime()
         await self._start_dashboard(runner)
 
@@ -119,6 +121,9 @@ class CoreLifecycle:
         plugins, self.plugins = self.plugins, None
         if plugins is not None:
             await plugins.close()
+        computer, self.computer = self.computer, None
+        if computer is not None:
+            await computer.stop()
         db, self._db = self._db, None
         if db is not None:
             await db.close()
@@ -210,21 +215,14 @@ class CoreLifecycle:
             logger.warning("Dashboard did not stop within %.0fs", _SHUTDOWN_TIMEOUT_S)
         logger.info("Dashboard stopped")
 
-    async def _probe_sandbox(self) -> RunnerStatus:
+    async def _start_sandbox(self) -> RunnerStatus:
         policy = self.config.computer
         if not policy.enable:
             return RunnerStatus(available=False, error="sandbox disabled in config")
-        status = await probe_runner(resolve_runner_binary())
-        if status.available:
-            logger.info(
-                "Sandbox runner %s ready (%s, allow=%s, network=%s)",
-                status.version,
-                status.path,
-                policy.allow,
-                policy.network,
-            )
-        else:
-            logger.warning("Sandbox runner unavailable: %s", status.error)
+        data_dir = self._data_dir if self._data_dir is not None else Path.cwd() / "data"
+        booter = ComputerBooter(policy, data_dir)
+        status = await booter.start()
+        self.computer = booter
         return status
 
 
