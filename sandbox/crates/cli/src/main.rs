@@ -171,7 +171,8 @@ fn doctor(json: bool) {
     if json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&info).expect("platform info serializes")
+            serde_json::to_string_pretty(&platform::doctor_document())
+                .expect("doctor document serializes")
         );
         return;
     }

@@ -154,23 +154,43 @@ fn user_exists(name: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn ensure_user(name: &str, password: &str) -> Result<()> {
-    let mut command = Command::new("net");
-    if user_exists(name) {
-        command.args(["user", name, password]);
-    } else {
-        command.args(["user", name, password, "/add"]);
-    }
+/// Sets or creates a local user. The password is written on stdin, never argv.
+const SET_PASSWORD_SCRIPT: &str = concat!(
+    "$user = $env:VSB_USER; ",
+    "$pass = [Console]::In.ReadLine(); ",
+    "$secure = ConvertTo-SecureString $pass -AsPlainText -Force; ",
+    "if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) { ",
+    "  Set-LocalUser -Name $user -Password $secure ",
+    "} else { ",
+    "  New-LocalUser -Name $user -Password $secure -AccountNeverExpires ",
+    "-UserMayNotChangePassword | Out-Null; ",
+    "  Set-LocalUser -Name $user -PasswordNeverExpires $true ",
+    "}"
+);
+
+fn password_command(name: &str) -> Command {
+    let mut command = Command::new("powershell.exe");
     command
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            SET_PASSWORD_SCRIPT,
+        ])
+        .env("VSB_USER", name)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = command.spawn().context("spawn net user")?;
+    command
+}
+
+fn ensure_user(name: &str, password: &str) -> Result<()> {
+    let mut command = password_command(name);
+    let mut child = command.spawn().context("spawn Set-LocalUser")?;
     if let Some(mut stdin) = child.stdin.take() {
-        // `net user` asks Y/N when the password is longer than 14 characters (LAN Manager).
-        stdin.write_all(b"Y\n").context("answer net user prompt")?;
+        writeln!(stdin, "{password}").context("write password to powershell")?;
     }
-    let output = child.wait_with_output().context("wait net user")?;
+    let output = child.wait_with_output().context("wait Set-LocalUser")?;
     if output.status.success() {
         return Ok(());
     }
@@ -180,7 +200,7 @@ fn ensure_user(name: &str, password: &str) -> Result<()> {
         String::from_utf8_lossy(&output.stderr)
     );
     let redacted = combined.replace(password, "***");
-    bail!("net user failed for sandbox account {name}: {redacted}");
+    bail!("sandbox account {name} password update failed: {redacted}");
 }
 
 fn add_offline_firewall() -> Result<()> {
@@ -306,5 +326,25 @@ mod tests {
         assert_eq!(password.len(), 14);
         assert!(password.starts_with('A'));
         assert!(password.ends_with("a1!"));
+    }
+
+    #[test]
+    fn user_setup_command_line_omits_the_password() {
+        let password = "Asecret12a1!";
+        let command = super::password_command("vsb-offline");
+        let argv: Vec<String> =
+            std::iter::once(command.get_program().to_string_lossy().into_owned())
+                .chain(
+                    command
+                        .get_args()
+                        .map(|arg| arg.to_string_lossy().into_owned()),
+                )
+                .collect();
+        let joined = argv.join(" ");
+        assert!(!joined.contains(password), "{joined}");
+        assert!(
+            !joined.contains("vsb-offline"),
+            "account name must stay in the environment, not argv: {joined}"
+        );
     }
 }

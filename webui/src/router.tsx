@@ -91,9 +91,19 @@ const pluginsRoute = createRoute({
   ),
 })
 
+const sandboxRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/sandbox",
+  staticData: { titleKey: "nav.sandbox" },
+  component: lazyRouteComponent(
+    () => import("@/features/sandbox/sandbox-page"),
+    "SandboxPage"
+  ),
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appRoute.addChildren([overviewRoute, pluginsRoute]),
+  appRoute.addChildren([overviewRoute, pluginsRoute, sandboxRoute]),
 ])
 
 export function createAppRouter(queryClient: QueryClient) {

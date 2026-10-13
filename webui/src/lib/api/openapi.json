@@ -500,10 +500,300 @@
           }
         }
       }
+    },
+    "/api/sandbox/doctor": {
+      "get": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Doctor",
+        "operationId": "doctor_api_sandbox_doctor_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoctorModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      }
+    },
+    "/api/sandbox/audit": {
+      "get": {
+        "tags": [
+          "sandbox"
+        ],
+        "summary": "Audit",
+        "operationId": "audit_api_sandbox_audit_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditModel"
+                  },
+                  "title": "Response Audit Api Sandbox Audit Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AuditModel": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "initiator": {
+            "type": "string",
+            "title": "Initiator"
+          },
+          "command": {
+            "type": "string",
+            "title": "Command"
+          },
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "timed_out": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timed Out"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "wall_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall Ms"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "session_id",
+          "initiator",
+          "command",
+          "allowed",
+          "exit_code",
+          "timed_out",
+          "backend",
+          "wall_ms",
+          "truncated",
+          "output",
+          "error"
+        ],
+        "title": "AuditModel"
+      },
+      "DoctorBackend": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "available",
+          "detail"
+        ],
+        "title": "DoctorBackend"
+      },
+      "DoctorModel": {
+        "properties": {
+          "os": {
+            "type": "string",
+            "title": "Os"
+          },
+          "arch": {
+            "type": "string",
+            "title": "Arch"
+          },
+          "backends": {
+            "items": {
+              "$ref": "#/components/schemas/DoctorBackend"
+            },
+            "type": "array",
+            "title": "Backends"
+          },
+          "auto": {
+            "type": "string",
+            "title": "Auto"
+          },
+          "policy": {
+            "type": "string",
+            "title": "Policy"
+          },
+          "can_execute": {
+            "type": "boolean",
+            "title": "Can Execute"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "os",
+          "arch",
+          "backends",
+          "auto",
+          "policy",
+          "can_execute"
+        ],
+        "title": "DoctorModel"
+      },
       "ErrorResponse": {
         "properties": {
           "detail": {

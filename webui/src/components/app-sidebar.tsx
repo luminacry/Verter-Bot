@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { LayoutDashboardIcon, PuzzleIcon } from "lucide-react"
+import { LayoutDashboardIcon, PuzzleIcon, ShieldIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { BrandMark } from "@/components/brand-mark"
@@ -19,6 +19,7 @@ import {
 const NAV_ITEMS: readonly NavItem[] = [
   { to: "/", titleKey: "nav.overview", icon: LayoutDashboardIcon },
   { to: "/plugins", titleKey: "nav.plugins", icon: PuzzleIcon },
+  { to: "/sandbox", titleKey: "nav.sandbox", icon: ShieldIcon },
 ]
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {

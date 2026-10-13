@@ -31,7 +31,14 @@ async def _plugins_client(
 
 
 async def test_metrics_logs_and_plugins_require_a_session(client: AsyncClient) -> None:
-    for path in ("/api/metrics", "/api/metrics/stream", "/api/logs", "/api/plugins"):
+    for path in (
+        "/api/metrics",
+        "/api/metrics/stream",
+        "/api/logs",
+        "/api/plugins",
+        "/api/sandbox/doctor",
+        "/api/sandbox/audit",
+    ):
         response = await client.get(path)
         assert response.status_code == 401
 
@@ -124,3 +131,38 @@ async def test_logs_endpoint_returns_the_ring(
     assert response.status_code == 200
     assert response.json()[0]["message"] == "kept"
     assert response.json()[0]["level"] == "WARNING"
+
+
+async def test_sandbox_audit_and_doctor(
+    tmp_path: Path, ctx: DashboardContext, admin_password: str
+) -> None:
+    db = Database(tmp_path / "verter.db")
+    await db.connect()
+    ctx.db = db
+    transport = ASGITransport(app=create_app(ctx))
+    client = AsyncClient(transport=transport, base_url="http://testserver")
+    try:
+        async with client:
+            assert (
+                await client.post(
+                    "/api/auth/login", json={"username": "admin", "password": admin_password}
+                )
+            ).status_code == 200
+            await db.record_sandbox_audit(
+                session_id="s",
+                initiator="bob",
+                command="echo hi",
+                allowed=False,
+                error="sandbox not allowed",
+            )
+            listing = (await client.get("/api/sandbox/audit")).json()
+            assert listing[0]["initiator"] == "bob"
+            assert listing[0]["allowed"] is False
+            doctor = await client.get("/api/sandbox/doctor")
+            assert doctor.status_code == 200
+            body = doctor.json()
+            assert body["auto"]
+            assert body["policy"]
+            assert "can_execute" in body
+    finally:
+        await db.close()

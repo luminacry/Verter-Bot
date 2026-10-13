@@ -9,6 +9,7 @@ export const en: typeof zhCN = {
     section: "Manage",
     overview: "Overview",
     plugins: "Plugins",
+    sandbox: "Sandbox",
   },
   auth: {
     title: "Sign in to Verter-Bot",
@@ -101,6 +102,33 @@ export const en: typeof zhCN = {
       failed: "Failed",
       timedOut: "Timed out",
       latency: "Mean latency",
+    },
+  },
+  sandbox: {
+    title: "Sandbox",
+    description: "Isolation policy, doctor capabilities, and exec audit",
+    policy: "Policy",
+    auto: "Auto backend",
+    none: "None",
+    notIsolated:
+      "No isolation backend is available. exec will refuse; nothing runs on the host.",
+    isolated: "Commands are isolated with the backend doctor reported.",
+    capabilities: "Capabilities",
+    available: "Available",
+    unavailable: "Unavailable",
+    audit: "Audit",
+    auditEmpty: "No audit rows yet.",
+    denied: "Denied",
+    allowed: "Allowed",
+    execute: "Execute",
+    empty: {
+      title: "No sandbox information",
+      description: "The runner is probed at startup.",
+    },
+    error: {
+      title: "Couldn't load sandbox status",
+      description: "Make sure the server is running, then try again.",
+      retry: "Retry",
     },
   },
   plugins: {
