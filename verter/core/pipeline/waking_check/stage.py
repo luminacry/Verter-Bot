@@ -14,6 +14,7 @@ from verter.core.message.components import At, AtAll, MessageComponent, Reply
 from verter.core.pipeline.context import PipelineContext
 from verter.core.pipeline.stage import Stage, register_stage
 from verter.core.platform.message_event import MessageEvent
+from verter.core.platform.message_type import MessageType
 
 
 def _addresses_bot(
@@ -41,6 +42,12 @@ class WakingCheckStage(Stage):
         settings = self._settings
         sender = event.get_sender_id()
         self_id = event.get_self_id()
+        # Notices and requests are not chat, so wake rules do not apply. They are
+        # delivered only to handlers that subscribe to those message types.
+        if event.get_message_type() in (MessageType.NOTICE, MessageType.REQUEST):
+            event.is_wake = True
+            event.activated_handlers = await self._ctx.handlers.match(event)
+            return
         if settings.ignore_bot_self_message and sender == self_id:
             event.stop_event()
             return

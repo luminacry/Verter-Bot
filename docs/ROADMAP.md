@@ -25,6 +25,8 @@
 
 ## 阶段 1：OneBot 补全（P2-1）
 
+状态：除带类型的接口封装和真实 NapCat 验证外已完成。
+
 - 消息段：video、file、forward / node、json、music、contact、poke、dice、rps、mface，收发双向。
 - 事件：notice（撤回、戳一戳、群成员增减、禁言、管理员变动、表情回应、精华等）与 request（好友、加群）进入流水线，插件可订阅。
 - 接口：`Context.call_action(platform_id, action, **params)` 透传 NapCat 全部接口；常用接口（撤回、禁言、踢人、群成员）提供带类型的封装。

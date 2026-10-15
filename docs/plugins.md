@@ -53,6 +53,42 @@ class HelloWorld(Star):
 - 数字越大的 `priority` 越先执行。handler 可以 `yield` 多次，每次都会立刻修饰并发送。
 - `@filter.on_decorating_result` 和 `@filter.after_message_sent` 是钩子。
 
+## 通知、请求与平台接口
+
+OneBot 的 notice（撤回、戳一戳、群成员变动、禁言等）和 request（好友 / 加群请求）会作为 `MessageType.NOTICE` / `MessageType.REQUEST` 事件进入流水线。它们不受唤醒规则限制，也不会匹配指令，只投递给订阅了这两种类型的 handler。`event.message_str` 是 `notice_type.sub_type`（或 `request_type.sub_type`），原始报文在 `event.message_obj.raw_message`。
+
+`context.call_action(platform_id, action, params)` 调用平台接口并返回 `data`。OneBot 平台可以调用 NapCat 的任意接口；接口失败时抛出 `OneBotActionError`，平台未运行或不支持接口时抛出 `RuntimeError`。
+
+```python
+from verter.api.event import MessageEvent, MessageType, filter
+
+
+class Moderator(Star):
+    @filter.event_message_type(MessageType.REQUEST)
+    async def on_request(self, event: MessageEvent):
+        raw = event.message_obj.raw_message
+        if event.message_str == "friend":
+            await self.context.call_action(
+                event.get_platform_id(),
+                "set_friend_add_request",
+                {"flag": raw["flag"], "approve": True},
+            )
+
+    @filter.command("mute")
+    async def mute(self, event: MessageEvent):
+        # message_str 已去掉唤醒前缀，形如 "mute 123456"。handler 只接收 event。
+        _, _, user_id = event.message_str.partition(" ")
+        if not user_id.strip():
+            yield event.plain_result("用法：/mute <QQ号>")
+            return
+        await self.context.call_action(
+            event.get_platform_id(),
+            "set_group_ban",
+            {"group_id": event.get_group_id(), "user_id": user_id.strip(), "duration": 600},
+        )
+        yield event.plain_result("已禁言 10 分钟")
+```
+
 ## 多轮对话
 
 `await event.wait_next(timeout=60)` 接收本会话的下一条消息，这条消息不会再进流水线。超时返回 `None`。

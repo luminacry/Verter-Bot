@@ -1,6 +1,7 @@
 """Events and handler filters."""
 
 from verter.core.platform.message_event import MessageEvent as MessageEvent
+from verter.core.platform.message_type import MessageType as MessageType
 from verter.core.star.filter import (
     PermissionType as PermissionType,
 )

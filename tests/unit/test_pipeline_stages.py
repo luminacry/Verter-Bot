@@ -10,7 +10,10 @@ from verter.core.message.message_event_result import MessageEventResult
 from verter.core.pipeline.context import HookPoint
 from verter.core.pipeline.process_stage.stage import FAILURE_REPLY
 from verter.core.pipeline.rate_limit_check.stage import RateLimitStage
+from verter.core.platform.bot_message import BotMessage, Group, MessageMember
 from verter.core.platform.message_event import MessageEvent
+from verter.core.platform.message_type import MessageType
+from verter.core.platform.sources.inmemory import InMemoryEvent
 
 
 def config(**platform_settings: object) -> VerterConfig:
@@ -104,6 +107,26 @@ async def test_unmatched_wake_stops_without_reply() -> None:
     event = h.platform.build_event("/unknown")
     assert await h.run(event) == []
     assert event.is_wake
+
+
+@pytest.mark.parametrize("kind", [MessageType.NOTICE, MessageType.REQUEST])
+async def test_notices_and_requests_skip_wake_rules(kind: MessageType) -> None:
+    h = await make_harness(handlers=ScriptedHandlers(listeners=[reply("seen")]))
+    bot_message = BotMessage(
+        type=kind,
+        self_id="verter",
+        session_id="g",
+        message_id="",
+        sender=MessageMember("user"),
+        message=[],
+        message_str="group_ban.ban",
+        group=Group("g"),
+    )
+    event = InMemoryEvent("group_ban.ban", bot_message, h.platform.meta(), "g", h.platform)
+    assert [m.chain.outline() for m in await h.run(event)] == ["seen"]
+    assert event.is_wake
+    # The outline is not treated as a command, even though wake rules were skipped.
+    assert not event.is_at_or_wake_command
 
 
 # Whitelist, session status, rate limit, content safety -------------------------

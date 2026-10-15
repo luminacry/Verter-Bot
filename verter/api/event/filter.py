@@ -3,6 +3,7 @@
 Re-exports the filter functions. There is no ``astrbot`` import shim.
 """
 
+from verter.core.platform.message_type import MessageType as MessageType
 from verter.core.star.filter import PermissionType as PermissionType
 from verter.core.star.filter import after_message_sent as after_message_sent
 from verter.core.star.filter import command as command

@@ -17,7 +17,17 @@ class ComponentType(StrEnum):
     REPLY = "reply"
     FACE = "face"
     RECORD = "record"
+    VIDEO = "video"
     FILE = "file"
+    JSON = "json"
+    FORWARD = "forward"
+    NODE = "node"
+    MUSIC = "music"
+    CONTACT = "contact"
+    POKE = "poke"
+    DICE = "dice"
+    RPS = "rps"
+    MFACE = "mface"
     UNKNOWN = "unknown"
 
 
@@ -109,6 +119,17 @@ class Record(MessageComponent):
 
 
 @dataclass(slots=True)
+class Video(MessageComponent):
+    """A video, referenced like :class:`Image`."""
+
+    file: str
+    type: ClassVar[ComponentType] = ComponentType.VIDEO
+
+    def outline(self) -> str:
+        return "[video]"
+
+
+@dataclass(slots=True)
 class File(MessageComponent):
     name: str
     file: str = ""
@@ -116,6 +137,116 @@ class File(MessageComponent):
 
     def outline(self) -> str:
         return f"[file:{self.name}]"
+
+
+@dataclass(slots=True)
+class Json(MessageComponent):
+    """A JSON card; ``data`` is the raw JSON string."""
+
+    data: str
+    type: ClassVar[ComponentType] = ComponentType.JSON
+
+    def outline(self) -> str:
+        return "[json]"
+
+
+@dataclass(slots=True)
+class Forward(MessageComponent):
+    """A merged-forward message, referenced by its id."""
+
+    id: str
+    type: ClassVar[ComponentType] = ComponentType.FORWARD
+
+    def outline(self) -> str:
+        return "[forward]"
+
+
+@dataclass(slots=True)
+class Node(MessageComponent):
+    """One node of a merged-forward message being sent."""
+
+    content: list[MessageComponent] = field(default_factory=list[MessageComponent])
+    user_id: str = ""
+    nickname: str = ""
+    message_id: str = ""
+    type: ClassVar[ComponentType] = ComponentType.NODE
+
+    def outline(self) -> str:
+        return "[node]"
+
+
+@dataclass(slots=True)
+class Music(MessageComponent):
+    """Music share. ``kind`` is ``qq``, ``163``, ``custom`` and so on."""
+
+    kind: str
+    id: str = ""
+    url: str = ""
+    audio: str = ""
+    title: str = ""
+    image: str = ""
+    singer: str = ""
+    type: ClassVar[ComponentType] = ComponentType.MUSIC
+
+    def outline(self) -> str:
+        return f"[music:{self.title or self.kind}]"
+
+
+@dataclass(slots=True)
+class Contact(MessageComponent):
+    """A recommended friend (``kind='qq'``) or group (``kind='group'``)."""
+
+    kind: str
+    id: str
+    type: ClassVar[ComponentType] = ComponentType.CONTACT
+
+    def outline(self) -> str:
+        return f"[contact:{self.kind}]"
+
+
+@dataclass(slots=True)
+class Poke(MessageComponent):
+    """A poke (戳一戳). ``target`` is the poked user id when known."""
+
+    target: str = ""
+    type: ClassVar[ComponentType] = ComponentType.POKE
+
+    def outline(self) -> str:
+        return "[poke]"
+
+
+@dataclass(slots=True)
+class Dice(MessageComponent):
+    result: str = ""
+    type: ClassVar[ComponentType] = ComponentType.DICE
+
+    def outline(self) -> str:
+        return f"[dice:{self.result}]" if self.result else "[dice]"
+
+
+@dataclass(slots=True)
+class Rps(MessageComponent):
+    """Rock-paper-scissors."""
+
+    result: str = ""
+    type: ClassVar[ComponentType] = ComponentType.RPS
+
+    def outline(self) -> str:
+        return f"[rps:{self.result}]" if self.result else "[rps]"
+
+
+@dataclass(slots=True)
+class Mface(MessageComponent):
+    """A market emoji pack sticker."""
+
+    emoji_id: str = ""
+    emoji_package_id: str = ""
+    key: str = ""
+    summary: str = ""
+    type: ClassVar[ComponentType] = ComponentType.MFACE
+
+    def outline(self) -> str:
+        return f"[mface:{self.summary}]" if self.summary else "[mface]"
 
 
 @dataclass(slots=True)

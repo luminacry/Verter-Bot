@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine, Sequence
+from collections.abc import Coroutine, Mapping, Sequence
 from typing import Any
 
 from verter.core.config import VerterConfig
@@ -87,3 +87,25 @@ class Context:
         if adapter is None:
             raise RuntimeError(f"platform {session.platform_id!r} is not running")
         await adapter.send_by_session(session, chain)
+
+    async def call_action(
+        self, platform_id: str, action: str, params: Mapping[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Call a platform action and return its data, e.g. a NapCat OneBot action.
+
+        Raises:
+            RuntimeError: If the platform is not running or cannot call actions.
+        """
+        from verter.core.runtime_state import current_runtime
+
+        runtime = current_runtime.get()
+        platforms = None if runtime is None else runtime.platforms
+        if platforms is None:
+            raise RuntimeError("platforms are not running")
+        adapter = platforms.get(platform_id)
+        if adapter is None:
+            raise RuntimeError(f"platform {platform_id!r} is not running")
+        call = getattr(adapter, "call", None)
+        if call is None:
+            raise RuntimeError(f"platform {platform_id!r} does not support actions")
+        return await call(action, params)

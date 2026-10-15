@@ -7,3 +7,5 @@ class MessageType(StrEnum):
     GROUP_MESSAGE = "GroupMessage"
     FRIEND_MESSAGE = "FriendMessage"
     OTHER_MESSAGE = "OtherMessage"
+    NOTICE = "Notice"
+    REQUEST = "Request"

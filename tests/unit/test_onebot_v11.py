@@ -11,7 +11,22 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from verter.core.config import PlatformConfig
-from verter.core.message.components import At, Plain, Reply
+from verter.core.message.components import (
+    At,
+    Contact,
+    Dice,
+    File,
+    Forward,
+    Json,
+    Mface,
+    Music,
+    Node,
+    Plain,
+    Poke,
+    Reply,
+    Rps,
+    Video,
+)
 from verter.core.message.message_event_result import MessageChain
 from verter.core.platform.message_event import MessageEvent
 from verter.core.platform.message_session import MessageSession
@@ -392,6 +407,178 @@ async def test_forward_mode_reconnects_after_disconnect() -> None:
             await asyncio.wait_for(run_task, 2)
     finally:
         await server.close()
+
+
+_RICH_SEGMENTS = [
+    {"type": "video", "data": {"file": "v.mp4", "url": "http://x/v.mp4"}},
+    {"type": "file", "data": {"name": "a.zip", "file": "fid"}},
+    {"type": "json", "data": {"data": "{}"}},
+    {"type": "forward", "data": {"id": "fwd1"}},
+    {"type": "music", "data": {"type": "163", "id": "9"}},
+    {"type": "contact", "data": {"type": "qq", "id": "42"}},
+    {"type": "poke", "data": {"qq": "7"}},
+    {"type": "dice", "data": {"result": "3"}},
+    {"type": "rps", "data": {"result": "1"}},
+    {"type": "mface", "data": {"emoji_id": "e", "summary": "cat"}},
+]
+
+
+async def test_rich_segments_convert_both_ways() -> None:
+    sink = _Sink()
+    platform = _platform(sink, ws_reverse_host="127.0.0.1", ws_reverse_port=0)
+    run_task = asyncio.ensure_future(platform.run())
+    try:
+        port = await _wait_for_port(platform)
+        async with aiohttp.ClientSession() as session, session.ws_connect(
+            f"ws://127.0.0.1:{port}/"
+        ) as ws:
+            event = {**_GROUP_MESSAGE_EVENT, "message": _RICH_SEGMENTS}
+            await ws.send_str(orjson.dumps(event).decode())
+            received = await sink.wait_one()
+            kinds = [type(c) for c in received.get_messages()]
+            assert kinds == [Video, File, Json, Forward, Music, Contact, Poke, Dice, Rps, Mface]
+            assert received.get_messages()[0].file == "http://x/v.mp4"  # type: ignore[attr-defined]
+
+            send = asyncio.ensure_future(
+                platform.send_by_session(
+                    MessageSession("qq", MessageType.GROUP_MESSAGE, "555"),
+                    MessageChain(
+                        [
+                            Video("v.mp4"),
+                            File("a.zip", "fid"),
+                            Json("{}"),
+                            Forward("fwd1"),
+                            Node(content=[Plain("x")], user_id="1", nickname="Ada"),
+                            Music("custom", url="http://m", title="song"),
+                            Contact("group", "99"),
+                            Poke("7"),
+                            Dice("3"),
+                            Rps(),
+                            Mface("e", "p", "k", "cat"),
+                        ]
+                    ),
+                )
+            )
+            request = orjson.loads(await asyncio.wait_for(ws.receive_str(), 2))
+            assert request["action"] == "send_group_msg"
+            assert [seg["type"] for seg in request["params"]["message"]] == [
+                "video",
+                "file",
+                "json",
+                "forward",
+                "node",
+                "music",
+                "contact",
+                "poke",
+                "dice",
+                "rps",
+                "mface",
+            ]
+            node = request["params"]["message"][4]["data"]
+            assert node["content"] == [{"type": "text", "data": {"text": "x"}}]
+            assert node["user_id"] == "1"
+            await ws.send_str(
+                orjson.dumps(
+                    {"status": "ok", "retcode": 0, "data": {}, "echo": request["echo"]}
+                ).decode()
+            )
+            await asyncio.wait_for(send, 2)
+    finally:
+        await platform.terminate()
+        await asyncio.wait_for(run_task, 2)
+
+
+async def test_notice_and_request_events_reach_the_pipeline() -> None:
+    sink = _Sink()
+    platform = _platform(sink, ws_reverse_host="127.0.0.1", ws_reverse_port=0)
+    run_task = asyncio.ensure_future(platform.run())
+    try:
+        port = await _wait_for_port(platform)
+        async with aiohttp.ClientSession() as session, session.ws_connect(
+            f"ws://127.0.0.1:{port}/"
+        ) as ws:
+            await ws.send_str(
+                orjson.dumps(
+                    {
+                        "post_type": "notice",
+                        "notice_type": "group_ban",
+                        "sub_type": "ban",
+                        "group_id": 555,
+                        "user_id": 7,
+                        "operator_id": 1,
+                        "duration": 60,
+                        "self_id": 10000,
+                    }
+                ).decode()
+            )
+            notice = await sink.wait_one()
+            assert notice.get_message_type() is MessageType.NOTICE
+            assert notice.message_str == "group_ban.ban"
+            assert notice.get_group_id() == "555"
+            assert notice.get_sender_id() == "7"
+
+            await ws.send_str(
+                orjson.dumps(
+                    {
+                        "post_type": "request",
+                        "request_type": "friend",
+                        "user_id": 9,
+                        "flag": "f1",
+                        "comment": "hi",
+                        "self_id": 10000,
+                    }
+                ).decode()
+            )
+            request = await sink.wait_one()
+            assert request.get_message_type() is MessageType.REQUEST
+            assert request.message_str == "friend"
+            assert request.session_id == "9"
+    finally:
+        await platform.terminate()
+        await asyncio.wait_for(run_task, 2)
+
+
+async def test_heartbeat_and_lifecycle_track_online_state() -> None:
+    sink = _Sink()
+    platform = _platform(sink, ws_reverse_host="127.0.0.1", ws_reverse_port=0)
+    run_task = asyncio.ensure_future(platform.run())
+    try:
+        port = await _wait_for_port(platform)
+        assert not platform.online
+        async with aiohttp.ClientSession() as session, session.ws_connect(
+            f"ws://127.0.0.1:{port}/"
+        ) as ws:
+
+            async def send_meta(**fields: object) -> None:
+                await ws.send_str(
+                    orjson.dumps({"post_type": "meta_event", "self_id": 10000, **fields}).decode()
+                )
+
+            async def until(predicate: object) -> None:
+                for _ in range(200):
+                    if callable(predicate) and predicate():
+                        return
+                    await asyncio.sleep(0.01)
+                raise AssertionError("condition not reached")
+
+            await until(lambda: platform.connected)
+            assert platform.online  # connected, nothing reported yet
+            assert platform.last_heartbeat is None
+
+            await send_meta(meta_event_type="heartbeat", status={"online": False}, interval=30000)
+            await until(lambda: platform.last_heartbeat is not None)
+            assert not platform.online
+
+            await send_meta(meta_event_type="lifecycle", sub_type="enable")
+            await until(lambda: platform.online)
+
+            await send_meta(meta_event_type="lifecycle", sub_type="disable")
+            await until(lambda: not platform.online)
+        # Meta events never reach the pipeline.
+        assert sink.events == []
+    finally:
+        await platform.terminate()
+        await asyncio.wait_for(run_task, 2)
 
 
 def test_unknown_settings_key_is_rejected() -> None:

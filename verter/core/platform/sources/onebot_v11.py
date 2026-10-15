@@ -23,13 +23,24 @@ from verter.core.log import logger
 from verter.core.message.components import (
     At,
     AtAll,
+    Contact,
+    Dice,
     Face,
+    File,
+    Forward,
     Image,
+    Json,
     MessageComponent,
+    Mface,
+    Music,
+    Node,
     Plain,
+    Poke,
     Record,
     Reply,
+    Rps,
     Unknown,
+    Video,
 )
 from verter.core.message.message_event_result import MessageChain
 from verter.core.platform.bot_message import BotMessage, Group, MessageMember
@@ -107,6 +118,43 @@ def _parse_segments(raw: list[dict[str, Any]]) -> list[MessageComponent]:
             out.append(Face(_str_field(data, "id")))
         elif kind == "reply":
             out.append(Reply(_str_field(data, "id")))
+        elif kind == "video":
+            out.append(Video(_str_field(data, "url", "file")))
+        elif kind == "file":
+            out.append(File(_str_field(data, "name"), _str_field(data, "url", "file")))
+        elif kind == "json":
+            out.append(Json(_str_field(data, "data")))
+        elif kind == "forward":
+            out.append(Forward(_str_field(data, "id")))
+        elif kind == "music":
+            out.append(
+                Music(
+                    _str_field(data, "type"),
+                    id=_str_field(data, "id"),
+                    url=_str_field(data, "url"),
+                    audio=_str_field(data, "audio"),
+                    title=_str_field(data, "title"),
+                    image=_str_field(data, "image"),
+                    singer=_str_field(data, "singer"),
+                )
+            )
+        elif kind == "contact":
+            out.append(Contact(_str_field(data, "type"), _str_field(data, "id")))
+        elif kind == "poke":
+            out.append(Poke(_str_field(data, "qq", "id")))
+        elif kind == "dice":
+            out.append(Dice(_str_field(data, "result")))
+        elif kind == "rps":
+            out.append(Rps(_str_field(data, "result")))
+        elif kind == "mface":
+            out.append(
+                Mface(
+                    _str_field(data, "emoji_id"),
+                    _str_field(data, "emoji_package_id"),
+                    _str_field(data, "key"),
+                    _str_field(data, "summary"),
+                )
+            )
         else:
             out.append(Unknown(str(kind or "unknown"), data))
     return out
@@ -130,9 +178,58 @@ def _render_segments(chain: MessageChain) -> list[dict[str, Any]]:
             segments.append({"type": "face", "data": {"id": component.id}})
         elif isinstance(component, Reply):
             segments.append({"type": "reply", "data": {"id": component.message_id}})
+        elif isinstance(component, Video):
+            segments.append({"type": "video", "data": {"file": component.file}})
+        elif isinstance(component, File):
+            segments.append(
+                {"type": "file", "data": {"file": component.file, "name": component.name}}
+            )
+        elif isinstance(component, Json):
+            segments.append({"type": "json", "data": {"data": component.data}})
+        elif isinstance(component, Forward):
+            segments.append({"type": "forward", "data": {"id": component.id}})
+        elif isinstance(component, Node):
+            node: dict[str, Any] = {}
+            if component.message_id:
+                node["id"] = component.message_id
+            if component.content:
+                node["content"] = _render_segments(MessageChain(component.content))
+            if component.user_id:
+                node["user_id"] = component.user_id
+            if component.nickname:
+                node["nickname"] = component.nickname
+            segments.append({"type": "node", "data": node})
+        elif isinstance(component, Music):
+            music: dict[str, Any] = {"type": component.kind}
+            for key in ("id", "url", "audio", "title", "image", "singer"):
+                if value := getattr(component, key):
+                    music[key] = value
+            segments.append({"type": "music", "data": music})
+        elif isinstance(component, Contact):
+            segments.append(
+                {"type": "contact", "data": {"type": component.kind, "id": component.id}}
+            )
+        elif isinstance(component, Poke):
+            poke = {"qq": component.target} if component.target else {}
+            segments.append({"type": "poke", "data": poke})
+        elif isinstance(component, Dice):
+            segments.append({"type": "dice", "data": {"result": component.result}})
+        elif isinstance(component, Rps):
+            segments.append({"type": "rps", "data": {"result": component.result}})
+        elif isinstance(component, Mface):
+            segments.append(
+                {
+                    "type": "mface",
+                    "data": {
+                        "emoji_id": component.emoji_id,
+                        "emoji_package_id": component.emoji_package_id,
+                        "key": component.key,
+                        "summary": component.summary,
+                    },
+                }
+            )
         elif isinstance(component, Unknown):
             segments.append({"type": component.kind, "data": dict(component.data)})
-        # File has no stable OneBot v11 segment and is dropped silently.
     return segments
 
 
@@ -214,6 +311,8 @@ class OneBotV11Platform(Platform):
         self._connections: set[_Connection] = set()
         self._current: _Connection | None = None
         self._events: set[asyncio.Task[None]] = set()
+        self._account_online: bool | None = None
+        self._last_heartbeat: float | None = None
         self._self_id = ""
         self._stopping = asyncio.Event()
         self._bound_port: int | None = None
@@ -222,6 +321,20 @@ class OneBotV11Platform(Platform):
     def connected(self) -> bool:
         """Whether a NapCat connection is currently open."""
         return self._current is not None
+
+    @property
+    def online(self) -> bool:
+        """Whether NapCat is connected and its QQ account is reported online.
+
+        Uses the latest heartbeat or lifecycle meta event. Before NapCat reports
+        either, an open connection counts as online.
+        """
+        return self._current is not None and self._account_online is not False
+
+    @property
+    def last_heartbeat(self) -> float | None:
+        """Event-loop time of the last heartbeat, or None if none arrived yet."""
+        return self._last_heartbeat
 
     @property
     def bound_port(self) -> int | None:
@@ -375,12 +488,57 @@ class OneBotV11Platform(Platform):
             task.add_done_callback(self._events.discard)
         elif post_type == "meta_event":
             self._handle_meta_event(payload)
-        # notice/request events are not modeled yet; silently ignored.
+        elif post_type in ("notice", "request"):
+            self._handle_notice_or_request(payload)
 
     def _handle_meta_event(self, payload: dict[str, Any]) -> None:
         self_id = payload.get("self_id")
         if self_id is not None:
             self._self_id = str(self_id)
+        meta_type = payload.get("meta_event_type")
+        if meta_type == "heartbeat":
+            self._last_heartbeat = asyncio.get_running_loop().time()
+            status: Any = payload.get("status")
+            if isinstance(status, dict):
+                online: Any = cast("dict[str, Any]", status).get("online")
+                if isinstance(online, bool):
+                    self._account_online = online
+        elif meta_type == "lifecycle":
+            sub_type = payload.get("sub_type")
+            if sub_type in ("enable", "connect"):
+                self._account_online = True
+            elif sub_type == "disable":
+                self._account_online = False
+
+    def _handle_notice_or_request(self, payload: dict[str, Any]) -> None:
+        """Turn a notice or request event into a pipeline event plugins can subscribe to.
+
+        The event carries no message segments. Its outline is ``notice_type.sub_type``
+        (or ``request_type.sub_type``), and the raw payload is on ``message_obj.raw_message``.
+        """
+        post_type = str(payload.get("post_type"))
+        kind = MessageType.NOTICE if post_type == "notice" else MessageType.REQUEST
+        detail = str(payload.get("notice_type") or payload.get("request_type") or "")
+        sub = _str_field(payload, "sub_type")
+        outline = f"{detail}.{sub}" if sub else detail
+
+        group_id = _str_field(payload, "group_id")
+        user_id = _str_field(payload, "user_id")
+        self_id = _str_field(payload, "self_id") or self._self_id
+        session_id = group_id or user_id or self_id
+
+        bot_message = BotMessage(
+            type=kind,
+            self_id=self_id,
+            session_id=session_id,
+            message_id=_str_field(payload, "message_id"),
+            sender=MessageMember(user_id),
+            message=[],
+            message_str=outline,
+            group=Group(group_id) if group_id else None,
+            raw_message=payload,
+        )
+        self.commit_event(OneBotEvent(outline, bot_message, self._meta, session_id, self))
 
     async def _handle_message_event(self, payload: dict[str, Any]) -> None:
         self_id = str(payload.get("self_id", self._self_id))

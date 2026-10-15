@@ -69,10 +69,12 @@ NapCat 侧对应配置：
 
 当前能力与限制：
 
-- 支持私聊、群聊消息的接收与回复；消息段支持 text、at（含 @全体）、image、record、face、reply，其余类型保留为 `Unknown`。
-- 断线后自动重连（正向 WS 带退避；适配器崩溃由 `PlatformManager` 退避重启）。
-- 尚未处理 notice（撤回、戳一戳、群成员变动等）与 request（好友 / 加群请求）事件。
-- 插件暂时只能发送消息，还不能调用撤回、禁言等其它 OneBot 接口。
+- 私聊、群聊消息的接收与回复。消息段双向支持 text、at（含 @全体）、image、record、video、face、reply、file、json、forward、node（仅发送）、music、contact、poke、dice、rps、mface，其余类型保留为 `Unknown` 并原样回传。
+- 引用回复会通过 `get_msg` 补全被引用消息的发送者，引用机器人的消息可以唤醒机器人。
+- notice（撤回、戳一戳、群成员变动、禁言等）与 request（好友 / 加群请求）作为 `MessageType.NOTICE` / `MessageType.REQUEST` 事件进入流水线，不受唤醒规则限制，只投递给订阅了这两种类型的插件。
+- 插件可以用 `context.call_action(platform_id, action, params)` 调用 NapCat 的任意接口（撤回、禁言、踢人、群文件、合并转发等），接口失败时抛出 `OneBotActionError`。
+- 心跳与 lifecycle 元事件用于判断 QQ 账号是否在线。
+- 断线后自动重连（正向 WS 退避从 `reconnect_interval_s` 起翻倍，上限 30 秒；适配器崩溃由 `PlatformManager` 退避重启）。反向 WS 允许多个连接，回复走最新的连接。
 - 不支持 HTTP 传输。
 - 仅在模拟 NapCat 对端上测试过，尚未用真实 NapCat 实例验证。
 
