@@ -93,9 +93,10 @@ async def test_reverse_mode_receives_private_and_group_messages() -> None:
     run_task = asyncio.ensure_future(platform.run())
     try:
         port = await _wait_for_port(platform)
-        async with aiohttp.ClientSession() as session, session.ws_connect(
-            f"ws://127.0.0.1:{port}/"
-        ) as ws:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.ws_connect(f"ws://127.0.0.1:{port}/") as ws,
+        ):
             await ws.send_str(orjson.dumps(_PRIVATE_MESSAGE_EVENT).decode())
             event = await sink.wait_one()
             assert event.get_message_type() is MessageType.FRIEND_MESSAGE
@@ -143,9 +144,10 @@ async def test_reverse_mode_send_by_session_calls_send_private_msg() -> None:
     run_task = asyncio.ensure_future(platform.run())
     try:
         port = await _wait_for_port(platform)
-        async with aiohttp.ClientSession() as session, session.ws_connect(
-            f"ws://127.0.0.1:{port}/"
-        ) as ws:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.ws_connect(f"ws://127.0.0.1:{port}/") as ws,
+        ):
             await ws.send_str(orjson.dumps(_PRIVATE_MESSAGE_EVENT).decode())
             await sink.wait_one()
 
@@ -230,9 +232,10 @@ async def test_reply_quote_resolves_the_quoted_sender() -> None:
     run_task = asyncio.ensure_future(platform.run())
     try:
         port = await _wait_for_port(platform)
-        async with aiohttp.ClientSession() as session, session.ws_connect(
-            f"ws://127.0.0.1:{port}/"
-        ) as ws:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.ws_connect(f"ws://127.0.0.1:{port}/") as ws,
+        ):
             quoted = {
                 **_GROUP_MESSAGE_EVENT,
                 "message": [{"type": "reply", "data": {"id": "2002"}}],
@@ -266,9 +269,10 @@ async def test_reverse_mode_rejects_non_array_message_format() -> None:
     run_task = asyncio.ensure_future(platform.run())
     try:
         port = await _wait_for_port(platform)
-        async with aiohttp.ClientSession() as session, session.ws_connect(
-            f"ws://127.0.0.1:{port}/"
-        ) as ws:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.ws_connect(f"ws://127.0.0.1:{port}/") as ws,
+        ):
             bad = {**_PRIVATE_MESSAGE_EVENT, "message": "hello"}
             await ws.send_str(orjson.dumps(bad).decode())
             # Give the dispatch loop a turn; no event should ever arrive.
@@ -310,8 +314,6 @@ class _FakeNapCatServer:
             if raw.type is aiohttp.WSMsgType.TEXT:
                 self.received.put_nowait(orjson.loads(raw.data))
         return ws
-
-
 
 
 async def test_forward_mode_connects_and_receives_messages() -> None:
@@ -429,9 +431,10 @@ async def test_rich_segments_convert_both_ways() -> None:
     run_task = asyncio.ensure_future(platform.run())
     try:
         port = await _wait_for_port(platform)
-        async with aiohttp.ClientSession() as session, session.ws_connect(
-            f"ws://127.0.0.1:{port}/"
-        ) as ws:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.ws_connect(f"ws://127.0.0.1:{port}/") as ws,
+        ):
             event = {**_GROUP_MESSAGE_EVENT, "message": _RICH_SEGMENTS}
             await ws.send_str(orjson.dumps(event).decode())
             received = await sink.wait_one()
@@ -494,9 +497,10 @@ async def test_notice_and_request_events_reach_the_pipeline() -> None:
     run_task = asyncio.ensure_future(platform.run())
     try:
         port = await _wait_for_port(platform)
-        async with aiohttp.ClientSession() as session, session.ws_connect(
-            f"ws://127.0.0.1:{port}/"
-        ) as ws:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.ws_connect(f"ws://127.0.0.1:{port}/") as ws,
+        ):
             await ws.send_str(
                 orjson.dumps(
                     {
@@ -545,9 +549,10 @@ async def test_heartbeat_and_lifecycle_track_online_state() -> None:
     try:
         port = await _wait_for_port(platform)
         assert not platform.online
-        async with aiohttp.ClientSession() as session, session.ws_connect(
-            f"ws://127.0.0.1:{port}/"
-        ) as ws:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.ws_connect(f"ws://127.0.0.1:{port}/") as ws,
+        ):
 
             async def send_meta(**fields: object) -> None:
                 await ws.send_str(
