@@ -5,8 +5,10 @@ description = "High-performance multi-platform LLM bot framework with an AstrBot
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiohttp>=3.12",
     "aiosqlite>=0.22.1",
     "fastapi>=0.143.0",
+    "orjson>=3.11",
     "pydantic>=2.14.1",
     "pyjwt>=2.15.1",
     "pyyaml>=6.0.3",

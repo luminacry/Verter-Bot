@@ -6,11 +6,11 @@
 
 ## 当前进度
 
-P0、P1、S0 已合入 main。P1 覆盖消息流水线、插件系统和 WebUI 观测；S0 锁定 Linux / Windows 沙箱默认方案（无隔离时拒绝执行）。下一阶段 P2（平台适配）与 P4（沙箱产品化）计划见 [docs/P2_P4_PLAN.md](docs/P2_P4_PLAN.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
+P0、P1、S0 已合入 main。P1 覆盖消息流水线、插件系统和 WebUI 观测；S0 锁定 Linux / Windows 沙箱默认方案（无隔离时拒绝执行）。P2（平台适配）进行中：OneBot v11 适配器（P2-1）已有首版，Telegram（P2-2）与 WebUI 平台页（P2-3）尚未开始。P2 / P4 计划见 [docs/P2_P4_PLAN.md](docs/P2_P4_PLAN.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
 
-| 组件 | 技术 | P0 已有内容 |
-|------|------|-------------|
-| 核心运行时 `verter/` | Python 3.12+、asyncio | 配置（沙箱默认本地、仅管理员、禁止联网）、CLI、生命周期、WebUI 后端 API（登录、系统信息） |
+| 组件 | 技术 | 已有内容 |
+|------|------|----------|
+| 核心运行时 `verter/` | Python 3.12+、asyncio、aiohttp | 配置（沙箱默认本地、仅管理员、禁止联网）、CLI、生命周期、消息流水线、插件系统、WebUI 后端 API；平台适配器：`console`、`inmemory`、`onebot_v11`（P2-1 首版） |
 | 沙箱执行器 `sandbox/` | Rust 1.99 | `verter-sandbox`：NDJSON 握手、`doctor`、协议 JSON Schema；Linux `exec`（bubblewrap，Landlock 回退）与可选 `setup`；Windows `exec`（AppContainer，已初始化时用隔离用户）与管理员 `setup` |
 | WebUI `webui/` | React 19 + shadcn/ui（Base UI） | 登录页、概览页（实时指标）、插件页、亮 / 暗主题、中 / 英文 |
 
@@ -34,6 +34,47 @@ uv run verter run --console   # 在当前终端里和机器人对话
 ```
 
 `uv run verter doctor` 会检查配置、沙箱执行器和 WebUI 构建产物。
+
+## 接入 QQ（OneBot v11 / NapCat）
+
+适配器支持两种 WebSocket 连接方式，在 `data/config.yaml` 的 `platform` 中添加一项：
+
+```yaml
+platform:
+  # 反向 WS：Verter 监听，NapCat 作为客户端连进来（推荐）
+  - id: qq_main
+    type: onebot_v11
+    mode: ws_reverse
+    ws_reverse_host: 127.0.0.1
+    ws_reverse_port: 6199
+    ws_reverse_path: /
+    access_token: "换成你的密钥"
+
+  # 正向 WS：Verter 主动连接 NapCat 的 WS 服务端
+  # - id: qq_forward
+  #   type: onebot_v11
+  #   mode: ws_forward
+  #   ws_forward_url: ws://127.0.0.1:3001
+  #   access_token: "换成你的密钥"
+  #   reconnect_interval_s: 5
+```
+
+NapCat 侧对应配置：
+
+- 反向 WS：在 NapCat 网络配置中新建“WebSocket 客户端”，`url` 填 `ws://127.0.0.1:6199/`，`token` 与 `access_token` 一致。
+- 正向 WS：新建“WebSocket 服务端”，端口与 `ws_forward_url` 一致，`token` 与 `access_token` 一致。
+- 两种方式都必须把 `messagePostFormat` 设为 `array`；`string`（CQ 码）格式的消息会被忽略并记录警告。
+
+`ws_reverse_host` 默认只监听本机。改为 `0.0.0.0` 对外开放时务必设置 `access_token`，否则任何能连上端口的人都可以冒充 NapCat 推送消息、接收机器人回复。
+
+当前能力与限制：
+
+- 支持私聊、群聊消息的接收与回复；消息段支持 text、at（含 @全体）、image、record、face、reply，其余类型保留为 `Unknown`。
+- 断线后自动重连（正向 WS 带退避；适配器崩溃由 `PlatformManager` 退避重启）。
+- 尚未处理 notice（撤回、戳一戳、群成员变动等）与 request（好友 / 加群请求）事件。
+- 插件暂时只能发送消息，还不能调用撤回、禁言等其它 OneBot 接口。
+- 不支持 HTTP 传输。
+- 仅在模拟 NapCat 对端上测试过，尚未用真实 NapCat 实例验证。
 
 ## 开发命令
 
