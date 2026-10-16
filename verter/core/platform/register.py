@@ -12,6 +12,7 @@ _BUILTIN: dict[str, str] = {
     "console": "verter.core.platform.sources.console:ConsolePlatform",
     "inmemory": "verter.core.platform.sources.inmemory:InMemoryPlatform",
     "onebot_v11": "verter.core.platform.sources.onebot_v11:OneBotV11Platform",
+    "telegram": "verter.core.platform.sources.telegram:TelegramPlatform",
 }
 _registered: dict[str, type[Platform]] = {}
 

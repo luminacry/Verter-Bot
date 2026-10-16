@@ -6,11 +6,11 @@
 
 ## 当前进度
 
-P0、P1、S0 已合入 main。P1 覆盖消息流水线、插件系统和 WebUI 观测；S0 锁定 Linux / Windows 沙箱默认方案（无隔离时拒绝执行）。P2（平台适配）进行中：OneBot v11 适配器（P2-1）已有首版，Telegram（P2-2）与 WebUI 平台页（P2-3）尚未开始。P2 / P4 计划见 [docs/P2_P4_PLAN.md](docs/P2_P4_PLAN.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
+P0、P1、S0 已合入 main。P1 覆盖消息流水线、插件系统和 WebUI 观测；S0 锁定 Linux / Windows 沙箱默认方案（无隔离时拒绝执行）。P2（平台适配）进行中：OneBot v11（P2-1）与 Telegram（P2-2）适配器已完成，WebUI 平台页（P2-3）尚未开始。P2 / P4 计划见 [docs/P2_P4_PLAN.md](docs/P2_P4_PLAN.md)，插件写法见 [docs/plugins.md](docs/plugins.md)，总体计划见 [docs/DEV_PLAN.md](docs/DEV_PLAN.md)。
 
 | 组件 | 技术 | 已有内容 |
 |------|------|----------|
-| 核心运行时 `verter/` | Python 3.12+、asyncio、aiohttp | 配置（沙箱默认本地、仅管理员、禁止联网）、CLI、生命周期、消息流水线、插件系统、WebUI 后端 API；平台适配器：`console`、`inmemory`、`onebot_v11`（P2-1 首版） |
+| 核心运行时 `verter/` | Python 3.12+、asyncio、aiohttp | 配置（沙箱默认本地、仅管理员、禁止联网）、CLI、生命周期、消息流水线、插件系统、WebUI 后端 API；平台适配器：`console`、`inmemory`、`onebot_v11`、`telegram` |
 | 沙箱执行器 `sandbox/` | Rust 1.99 | `verter-sandbox`：NDJSON 握手、`doctor`、协议 JSON Schema；Linux `exec`（bubblewrap，Landlock 回退）与可选 `setup`；Windows `exec`（AppContainer，已初始化时用隔离用户）与管理员 `setup` |
 | WebUI `webui/` | React 19 + shadcn/ui（Base UI） | 登录页、概览页（实时指标）、插件页、亮 / 暗主题、中 / 英文 |
 
@@ -77,6 +77,32 @@ NapCat 侧对应配置：
 - 断线后自动重连（正向 WS 退避从 `reconnect_interval_s` 起翻倍，上限 30 秒；适配器崩溃由 `PlatformManager` 退避重启）。反向 WS 允许多个连接，回复走最新的连接。
 - 不支持 HTTP 传输。
 - 仅在模拟 NapCat 对端上测试过，尚未用真实 NapCat 实例验证。
+
+## 接入 Telegram
+
+适配器用 aiohttp 长轮询 Bot API，不依赖官方 SDK。在 `data/config.yaml` 的 `platform` 中添加一项：
+
+```yaml
+platform:
+  - id: tg_main
+    type: telegram
+    token: "ENV:TELEGRAM_BOT_TOKEN"   # 也支持直接写 token，但不建议
+    api_base: https://api.telegram.org  # 可选，自建 Bot API 服务器时改这里
+    poll_timeout_s: 25                  # 长轮询时长
+    send_interval_s: 1.1                # 同一会话两次发送的最小间隔
+    retry_interval_s: 5                 # getUpdates 失败后的重试间隔
+```
+
+`ENV:NAME` 会在启动时从环境变量读取，变量未设置则启动失败并报错，这样 token 不必写进配置文件。
+
+当前能力与限制：
+
+- 私聊与群聊的文本消息；`@机器人` 解析为 At 段（实体偏移按 UTF-16 计算，emoji 不会错位），回复他人消息解析为 Reply 段。
+- 发送支持文本、@、引用回复，以及图片（URL、`file://`、`base64://`）。同一会话的发送按 `send_interval_s` 限速，贴近 Telegram 每秒一条的限制。
+- `getUpdates` 失败会按 `retry_interval_s` 重试，不会让适配器退出。
+- 群组隐私模式是 BotFather 的设置：默认机器人只收到以 `/` 开头或 @ 它的群消息，普通群消息根本到不了适配器。需要收全部群消息时，在 BotFather 里关闭隐私模式。
+- 暂不接收图片、贴纸、文件等非文本消息，也不处理回调查询等其它更新类型。
+- 仅在模拟 Bot API 上测试过，尚未用真实 Bot 验证。
 
 ## 开发命令
 
