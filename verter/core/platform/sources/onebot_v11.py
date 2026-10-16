@@ -96,6 +96,18 @@ def _str_field(data: dict[str, Any], *keys: str) -> str:
     return ""
 
 
+def _as_dict(data: Any) -> dict[str, Any]:
+    return cast("dict[str, Any]", data) if isinstance(data, dict) else {}
+
+
+def _as_dict_list(data: Any) -> list[dict[str, Any]]:
+    if not isinstance(data, list):
+        return []
+    return [
+        cast("dict[str, Any]", item) for item in cast("list[Any]", data) if isinstance(item, dict)
+    ]
+
+
 def _parse_segments(raw: list[dict[str, Any]]) -> list[MessageComponent]:
     """Convert OneBot v11 array-format segments to :class:`MessageComponent`."""
     out: list[MessageComponent] = []
@@ -604,8 +616,11 @@ class OneBotV11Platform(Platform):
         params: Mapping[str, Any] | None = None,
         *,
         timeout_s: float = _API_TIMEOUT_S,
-    ) -> dict[str, Any]:
-        """Call a NapCat action over the newest open connection and return ``data``.
+    ) -> Any:
+        """Call a NapCat action over the newest open connection and return its ``data``.
+
+        ``data`` is returned as NapCat sent it: a dict for most actions, a list for
+        list actions such as ``get_group_member_list``, or None.
 
         Raises:
             ConnectionError: If no connection is open or it closes before answering.
@@ -623,11 +638,71 @@ class OneBotV11Platform(Platform):
         except TimeoutError:
             connection.calls.forget(echo)
             raise
-        logger.debug("call %s echo=%s got %s", action, echo, reply)
         if reply.get("status") != "ok" or reply.get("retcode") not in (0, None):
             raise OneBotActionError(action, reply.get("retcode"), str(reply.get("message", "")))
-        data: Any = reply.get("data")
-        return cast("dict[str, Any]", data) if isinstance(data, dict) else {}
+        return reply.get("data")
+
+    # -- typed wrappers for common actions; any other action goes through call() --------
+
+    async def get_login_info(self) -> dict[str, Any]:
+        return _as_dict(await self.call("get_login_info"))
+
+    async def get_msg(self, message_id: str) -> dict[str, Any]:
+        return _as_dict(await self.call("get_msg", {"message_id": message_id}))
+
+    async def delete_msg(self, message_id: str) -> None:
+        """Recall a message."""
+        await self.call("delete_msg", {"message_id": message_id})
+
+    async def set_group_ban(self, group_id: str, user_id: str, duration_s: int = 1800) -> None:
+        """Mute a member for ``duration_s`` seconds; 0 lifts the mute."""
+        await self.call(
+            "set_group_ban", {"group_id": group_id, "user_id": user_id, "duration": duration_s}
+        )
+
+    async def set_group_whole_ban(self, group_id: str, *, enable: bool = True) -> None:
+        await self.call("set_group_whole_ban", {"group_id": group_id, "enable": enable})
+
+    async def set_group_kick(
+        self, group_id: str, user_id: str, *, reject_add_request: bool = False
+    ) -> None:
+        await self.call(
+            "set_group_kick",
+            {"group_id": group_id, "user_id": user_id, "reject_add_request": reject_add_request},
+        )
+
+    async def get_group_info(self, group_id: str) -> dict[str, Any]:
+        return _as_dict(await self.call("get_group_info", {"group_id": group_id}))
+
+    async def get_group_member_info(self, group_id: str, user_id: str) -> dict[str, Any]:
+        return _as_dict(
+            await self.call("get_group_member_info", {"group_id": group_id, "user_id": user_id})
+        )
+
+    async def get_group_member_list(self, group_id: str) -> list[dict[str, Any]]:
+        return _as_dict_list(await self.call("get_group_member_list", {"group_id": group_id}))
+
+    async def get_group_list(self) -> list[dict[str, Any]]:
+        return _as_dict_list(await self.call("get_group_list"))
+
+    async def get_friend_list(self) -> list[dict[str, Any]]:
+        return _as_dict_list(await self.call("get_friend_list"))
+
+    async def set_friend_add_request(
+        self, flag: str, *, approve: bool = True, remark: str = ""
+    ) -> None:
+        await self.call(
+            "set_friend_add_request", {"flag": flag, "approve": approve, "remark": remark}
+        )
+
+    async def set_group_add_request(
+        self, flag: str, sub_type: str, *, approve: bool = True, reason: str = ""
+    ) -> None:
+        """Answer a join (``sub_type='add'``) or invite (``sub_type='invite'``) request."""
+        await self.call(
+            "set_group_add_request",
+            {"flag": flag, "sub_type": sub_type, "approve": approve, "reason": reason},
+        )
 
     async def _fill_reply_senders(self, segments: list[MessageComponent]) -> None:
         """Resolve who sent each quoted message, so quoting the bot can wake it."""
@@ -635,10 +710,12 @@ class OneBotV11Platform(Platform):
             if not isinstance(segment, Reply) or not segment.message_id or segment.sender_id:
                 continue
             try:
-                data = await self.call(
-                    "get_msg",
-                    {"message_id": segment.message_id},
-                    timeout_s=_REPLY_LOOKUP_TIMEOUT_S,
+                data = _as_dict(
+                    await self.call(
+                        "get_msg",
+                        {"message_id": segment.message_id},
+                        timeout_s=_REPLY_LOOKUP_TIMEOUT_S,
+                    )
                 )
             except (ConnectionError, TimeoutError, OneBotActionError) as exc:
                 logger.debug("get_msg(%s) failed: %s", segment.message_id, exc)

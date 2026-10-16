@@ -25,7 +25,7 @@
 
 ## 阶段 1：OneBot 补全（P2-1）
 
-状态：除带类型的接口封装和真实 NapCat 验证外已完成。
+状态：代码部分已完成；真实 NapCat 手工验证待测试号就位。
 
 - 消息段：video、file、forward / node、json、music、contact、poke、dice、rps、mface，收发双向。
 - 事件：notice（撤回、戳一戳、群成员增减、禁言、管理员变动、表情回应、精华等）与 request（好友、加群）进入流水线，插件可订阅。

@@ -90,8 +90,11 @@ class Context:
 
     async def call_action(
         self, platform_id: str, action: str, params: Mapping[str, Any] | None = None
-    ) -> dict[str, Any]:
+    ) -> Any:
         """Call a platform action and return its data, e.g. a NapCat OneBot action.
+
+        The data is whatever the platform returned: usually a dict, a list for list
+        actions such as ``get_group_member_list``, or None.
 
         Raises:
             RuntimeError: If the platform is not running or cannot call actions.

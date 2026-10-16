@@ -586,6 +586,68 @@ async def test_heartbeat_and_lifecycle_track_online_state() -> None:
         await asyncio.wait_for(run_task, 2)
 
 
+async def test_typed_wrappers_send_the_right_actions() -> None:
+    sink = _Sink()
+    platform = _platform(sink, ws_reverse_host="127.0.0.1", ws_reverse_port=0)
+    run_task = asyncio.ensure_future(platform.run())
+    try:
+        port = await _wait_for_port(platform)
+        async with (
+            aiohttp.ClientSession() as session,
+            session.ws_connect(f"ws://127.0.0.1:{port}/") as ws,
+        ):
+            for _ in range(200):
+                if platform.connected:
+                    break
+                await asyncio.sleep(0.01)
+
+            async def answer(data: object) -> dict[str, object]:
+                request = orjson.loads(await asyncio.wait_for(ws.receive_str(), 2))
+                await ws.send_str(
+                    orjson.dumps(
+                        {"status": "ok", "retcode": 0, "data": data, "echo": request["echo"]}
+                    ).decode()
+                )
+                return {"action": request["action"], "params": request["params"]}
+
+            ban = asyncio.ensure_future(platform.set_group_ban("555", "7", duration_s=60))
+            assert await answer(None) == {
+                "action": "set_group_ban",
+                "params": {"group_id": "555", "user_id": "7", "duration": 60},
+            }
+            assert await asyncio.wait_for(ban, 2) is None
+
+            members = asyncio.ensure_future(platform.get_group_member_list("555"))
+            seen = await answer([{"user_id": 7}, "junk", {"user_id": 8}])
+            assert seen["action"] == "get_group_member_list"
+            assert await asyncio.wait_for(members, 2) == [{"user_id": 7}, {"user_id": 8}]
+
+            info = asyncio.ensure_future(platform.get_login_info())
+            assert (await answer({"user_id": 10000}))["action"] == "get_login_info"
+            assert await asyncio.wait_for(info, 2) == {"user_id": 10000}
+
+            recall = asyncio.ensure_future(platform.delete_msg("42"))
+            assert await answer(None) == {"action": "delete_msg", "params": {"message_id": "42"}}
+            await asyncio.wait_for(recall, 2)
+
+            join = asyncio.ensure_future(
+                platform.set_group_add_request("f1", "add", approve=False, reason="no")
+            )
+            assert await answer(None) == {
+                "action": "set_group_add_request",
+                "params": {"flag": "f1", "sub_type": "add", "approve": False, "reason": "no"},
+            }
+            await asyncio.wait_for(join, 2)
+
+            # A dict-returning wrapper tolerates a non-dict payload.
+            group = asyncio.ensure_future(platform.get_group_info("555"))
+            await answer(None)
+            assert await asyncio.wait_for(group, 2) == {}
+    finally:
+        await platform.terminate()
+        await asyncio.wait_for(run_task, 2)
+
+
 def test_unknown_settings_key_is_rejected() -> None:
     with pytest.raises(Exception, match="nope"):
         _platform(_Sink(), nope=True)
