@@ -500,6 +500,133 @@
           }
         }
       }
+    },
+    "/api/platforms": {
+      "get": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "Platforms",
+        "operationId": "platforms_api_platforms_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlatformModel"
+                  },
+                  "type": "array",
+                  "title": "Response Platforms Api Platforms Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      }
+    },
+    "/api/platforms/{platform_id}/restart": {
+      "post": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "Restart",
+        "operationId": "restart_api_platforms__platform_id__restart_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -625,6 +752,88 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "PlatformModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "starting",
+              "running",
+              "backoff",
+              "stopped"
+            ],
+            "title": "Status"
+          },
+          "restarts": {
+            "type": "integer",
+            "title": "Restarts"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "next_restart_in_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Restart In S"
+          },
+          "online": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Online"
+          },
+          "last_seen_ago_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen Ago S"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "status",
+          "restarts",
+          "last_error",
+          "next_restart_in_s",
+          "online",
+          "last_seen_ago_s"
+        ],
+        "title": "PlatformModel"
       },
       "PluginAction": {
         "properties": {

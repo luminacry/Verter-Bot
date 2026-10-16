@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from verter.core.config import PlatformConfig, VerterConfig
@@ -107,6 +108,36 @@ async def test_last_error_hides_tokens(
     assert "super-secret" not in body[0]["last_error"]
     assert "123:ABCDEF" not in body[0]["last_error"]
     assert "<redacted>" in body[0]["last_error"]
+
+
+async def test_env_configured_token_is_redacted(
+    client: AsyncClient,
+    admin_password: str,
+    ctx: DashboardContext,
+    config: VerterConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QQ_TOKEN", "env-secret-value")
+    config.platform = [
+        PlatformConfig.model_validate(
+            {"id": "qq", "type": "onebot_v11", "access_token": "ENV:QQ_TOKEN"}
+        )
+    ]
+    ctx.platforms = _Manager(  # type: ignore[assignment]
+        [
+            _stat(
+                "qq",
+                "onebot_v11",
+                PlatformStatus.BACKOFF,
+                "connect ws://h/x?access_token=env-secret-value failed",
+            )
+        ],
+        {"qq": _Adapter()},
+    )
+    await client.post("/api/auth/login", json={"username": "admin", "password": admin_password})
+    error = (await client.get("/api/platforms")).json()[0]["last_error"]
+    assert "env-secret-value" not in error
+    assert "access_token=<redacted>" in error
 
 
 async def test_restart_outcomes(

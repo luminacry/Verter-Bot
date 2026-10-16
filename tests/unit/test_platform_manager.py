@@ -156,8 +156,10 @@ async def test_concurrent_restart_is_rejected_and_others_are_untouched() -> None
         def __init__(self, config: PlatformConfig, context: PlatformContext) -> None:
             super().__init__(config, context)
             self.started = asyncio.Event()
+            self.run_count = 0
 
         async def run(self) -> None:
+            self.run_count += 1
             self.started.set()
             await asyncio.Event().wait()
 
@@ -175,11 +177,16 @@ async def test_concurrent_restart_is_rejected_and_others_are_untouched() -> None
         assert isinstance(first, Slow)
         assert isinstance(other, Slow)
         await asyncio.wait_for(first.started.wait(), 1)
+        # restart() is called while run() is still in flight (not crashed/backing off).
         restarting = asyncio.ensure_future(manager.restart("a"))
         await asyncio.sleep(0)
         with pytest.raises(RuntimeError, match="restart already in progress"):
             await manager.restart("a")
         await restarting
+        # The adapter actually came back up: run() was invoked a second time and the
+        # manager reports it running again, not stuck in some half-restarted state.
+        assert first.run_count == 2
+        assert manager.stats()[0].status is PlatformStatus.RUNNING
         assert other.started.is_set()
         with pytest.raises(KeyError):
             await manager.restart("missing")

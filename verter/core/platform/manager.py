@@ -113,12 +113,6 @@ class PlatformManager:
         pid = platform.config.id
         task = self._tasks.pop(pid, None)
         if task is not None:
-            # Let an in-flight crash settle into its backoff sleep before cancelling,
-            # so the cancellation lands on the sleep rather than inside run().
-            for _ in range(100):
-                if platform.status is PlatformStatus.BACKOFF or task.done():
-                    break
-                await asyncio.sleep(0.01)
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

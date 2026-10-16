@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
 import re
 from typing import TYPE_CHECKING, Literal, Protocol
 
@@ -26,6 +28,8 @@ class PlatformControl(Protocol):
 
 _MAX_ERROR = 500
 _SECRET_KEYS = ("token", "access_token")
+_TOKEN_IN_URL = re.compile(r"/bot[^/\s]+")
+_ACCESS_TOKEN_PARAM = re.compile(r"(access_token=)[^&\s]+")
 
 PlatformState = Literal["starting", "running", "backoff", "stopped"]
 
@@ -124,11 +128,16 @@ def _presence(adapter: object | None, now: float) -> tuple[bool | None, float | 
 
 
 def _secrets(ctx: DashboardContext) -> list[str]:
+    """Resolved secret values, including those loaded from ``ENV:`` references."""
     found: list[str] = []
     for platform in ctx.config.platform:
         for key in _SECRET_KEYS:
             value = platform.settings.get(key)
-            if isinstance(value, str) and value and not value.startswith("ENV:"):
+            if not isinstance(value, str) or not value:
+                continue
+            if value.startswith("ENV:"):
+                value = os.environ.get(value[len("ENV:") :].strip(), "")
+            if value:
                 found.append(value)
     return found
 
@@ -139,13 +148,12 @@ def _redact(message: str | None, secrets: list[str]) -> str | None:
         return None
     for secret in secrets:
         message = message.replace(secret, "<redacted>")
-    message = re.sub(r"/bot[^/\s]+", "/bot<redacted>", message)
+    message = _TOKEN_IN_URL.sub("/bot<redacted>", message)
+    message = _ACCESS_TOKEN_PARAM.sub(r"\1<redacted>", message)
     return message[:_MAX_ERROR]
 
 
 def _loop_time() -> float:
-    import asyncio
-
     try:
         return asyncio.get_running_loop().time()
     except RuntimeError:
