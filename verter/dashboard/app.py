@@ -17,6 +17,7 @@ from verter.core.computer.runner import RunnerStatus
 from verter.core.config import ConfigError, VerterConfig
 from verter.dashboard.auth import build_auth_router, make_session_dependency
 from verter.dashboard.context import DashboardContext
+from verter.dashboard.platforms import build_platforms_router
 from verter.dashboard.runtime import build_runtime_router
 from verter.dashboard.system import build_system_router
 
@@ -83,6 +84,9 @@ def create_app(ctx: DashboardContext, *, webui_dist: Path | None = None) -> Fast
     app.include_router(build_auth_router(ctx, require_session), prefix="/api/auth", tags=["auth"])
     app.include_router(build_system_router(ctx, require_session), prefix="/api", tags=["system"])
     app.include_router(build_runtime_router(ctx, require_session), prefix="/api", tags=["runtime"])
+    app.include_router(
+        build_platforms_router(ctx, require_session), prefix="/api", tags=["platforms"]
+    )
     if webui_dist is not None:
         _mount_webui(app, webui_dist)
     app.add_middleware(GZipMiddleware, minimum_size=1024)

@@ -115,10 +115,79 @@ async def test_crashed_platforms_restart_with_backoff() -> None:
         assert stat.restarts == 2
         assert stat.last_error is not None
         assert "boom" in stat.last_error
+        assert stat.next_restart_at is None
         await manager.stop()
         assert platform.status is PlatformStatus.STOPPED
     finally:
         unregister_platform_adapter("flaky")
+
+
+async def test_manual_restart_during_backoff_resets_the_delay() -> None:
+    class Broken(_Scripted):
+        async def run(self) -> None:
+            raise RuntimeError("always")
+
+        async def terminate(self) -> None:
+            return None
+
+    _register("broken", Broken)
+    try:
+        manager = _manager(
+            [PlatformConfig(id="b", type="broken")], restart_initial_s=30, restart_max_s=30
+        )
+        await manager.start()
+        await asyncio.wait_for(
+            _until(lambda: manager.stats()[0].status is PlatformStatus.BACKOFF), 1
+        )
+        before = manager.stats()[0].restarts
+        await manager.restart("b")
+        # The counter is kept across a manual restart; the fresh run crashes back into backoff.
+        await asyncio.wait_for(
+            _until(lambda: manager.stats()[0].status is PlatformStatus.BACKOFF), 1
+        )
+        assert manager.stats()[0].restarts == before
+        await manager.stop()
+    finally:
+        unregister_platform_adapter("broken")
+
+
+async def test_concurrent_restart_is_rejected_and_others_are_untouched() -> None:
+    class Slow(_Scripted):
+        def __init__(self, config: PlatformConfig, context: PlatformContext) -> None:
+            super().__init__(config, context)
+            self.started = asyncio.Event()
+
+        async def run(self) -> None:
+            self.started.set()
+            await asyncio.Event().wait()
+
+        async def terminate(self) -> None:
+            await asyncio.sleep(0.05)
+
+    _register("slow", Slow)
+    try:
+        manager = _manager(
+            [PlatformConfig(id="a", type="slow"), PlatformConfig(id="b", type="slow")]
+        )
+        await manager.start()
+        first = manager.get("a")
+        other = manager.get("b")
+        assert isinstance(first, Slow)
+        assert isinstance(other, Slow)
+        await asyncio.wait_for(first.started.wait(), 1)
+        restarting = asyncio.ensure_future(manager.restart("a"))
+        await asyncio.sleep(0)
+        with pytest.raises(RuntimeError, match="restart already in progress"):
+            await manager.restart("a")
+        await restarting
+        assert other.started.is_set()
+        with pytest.raises(KeyError):
+            await manager.restart("missing")
+        await manager.stop()
+        with pytest.raises(RuntimeError, match="manager is stopping"):
+            await manager.restart("a")
+    finally:
+        unregister_platform_adapter("slow")
 
 
 async def test_terminate_errors_do_not_block_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:

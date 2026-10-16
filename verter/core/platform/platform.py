@@ -19,9 +19,11 @@ from verter.core.platform.platform_metadata import PlatformMetadata
 
 
 class PlatformStatus(StrEnum):
-    PENDING = "pending"
+    """Lifecycle of one supervised adapter. Online state is reported separately."""
+
+    STARTING = "starting"
     RUNNING = "running"
-    ERROR = "error"
+    BACKOFF = "backoff"
     STOPPED = "stopped"
 
 
@@ -49,7 +51,7 @@ class Platform(ABC):
     def __init__(self, config: PlatformConfig, context: PlatformContext) -> None:
         self.config = config
         self.context = context
-        self.status = PlatformStatus.PENDING
+        self.status = PlatformStatus.STARTING
         self.last_error: str | None = None
 
     @abstractmethod

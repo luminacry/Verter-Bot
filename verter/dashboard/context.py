@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from verter.core.computer.runner import RunnerStatus
 from verter.core.config import VerterConfig
@@ -14,6 +15,9 @@ from verter.core.log_ring import RING, LogRing
 from verter.core.security import generate_secret
 from verter.core.star.models import PluginControl
 from verter.dashboard.auth import LoginRateLimiter
+
+if TYPE_CHECKING:
+    from verter.dashboard.platforms import PlatformControl
 
 
 @dataclass(slots=True)
@@ -26,6 +30,7 @@ class DashboardContext:
     login_limiter: LoginRateLimiter = field(default_factory=LoginRateLimiter)
     bus: EventBus | None = None
     plugins: PluginControl | None = None
+    platforms: PlatformControl | None = None
     logs: LogRing = field(default_factory=lambda: RING)
 
     @classmethod
