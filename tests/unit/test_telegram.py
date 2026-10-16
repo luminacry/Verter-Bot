@@ -54,7 +54,12 @@ class _FakeBotAPI:
             if self.fail_next_get_updates:
                 self.fail_next_get_updates = False
                 return web.json_response({"ok": False, "description": "boom"}, status=500)
-            return web.json_response({"ok": True, "result": self.updates.get_nowait()})
+            # Long polling waits for updates instead of failing on an empty queue.
+            try:
+                updates = await asyncio.wait_for(self.updates.get(), 0.2)
+            except TimeoutError:
+                updates = []
+            return web.json_response({"ok": True, "result": updates})
         if action == "sendMessage":
             return web.json_response(
                 {"ok": True, "result": {"message_id": 77, "chat": {"id": payload.get("chat_id")}}}
@@ -142,7 +147,7 @@ async def test_private_message_becomes_an_event() -> None:
             if platform.bot_username:
                 break
             await asyncio.sleep(0.01)
-        fake.updates.put_nowait([_message("hello")])
+        await fake.updates.put([_message("hello")])
         event = await _platform_event(platform, fake)
         assert event.get_message_type() is MessageType.FRIEND_MESSAGE
         assert event.message_str == "hello"
@@ -169,7 +174,7 @@ async def test_group_mention_splits_at_component() -> None:
                 break
             await asyncio.sleep(0.01)
         text = "@verter_bot hi there"
-        fake.updates.put_nowait(
+        await fake.updates.put(
             [
                 _message(
                     text,
@@ -185,7 +190,7 @@ async def test_group_mention_splits_at_component() -> None:
         assert kinds[0] == "At"
         assert event.message_str == text
         # An offset of update_id + 1 is sent back on the next poll.
-        fake.updates.put_nowait([])
+        await fake.updates.put([])
         deadline = asyncio.get_running_loop().time() + 2
         while asyncio.get_running_loop().time() < deadline:
             if fake.offset_seen == 2:
@@ -206,7 +211,7 @@ async def test_non_mention_entities_stay_plain() -> None:
                 break
             await asyncio.sleep(0.01)
         text = "@someone else and @not_bot"
-        fake.updates.put_nowait(
+        await fake.updates.put(
             [
                 _message(
                     text,
@@ -293,7 +298,7 @@ async def test_reply_quote_and_utf16_mention_are_parsed() -> None:
         await _wait_ready(platform)
         text = "\U0001f600 @verter_bot hi"
         at_offset = len("\U0001f600 ".encode("utf-16-le")) // 2
-        fake.updates.put_nowait(
+        await fake.updates.put(
             [
                 _message(
                     text,
@@ -321,7 +326,7 @@ async def test_message_without_text_is_ignored() -> None:
     platform, server, fake, task = await _make()
     try:
         await _wait_ready(platform)
-        fake.updates.put_nowait(
+        await fake.updates.put(
             [
                 {
                     "update_id": 3,
