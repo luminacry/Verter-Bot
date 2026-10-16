@@ -16,7 +16,8 @@ async def test_dashboard_serves_on_an_ephemeral_port(config: VerterConfig) -> No
         url = lifecycle.dashboard_url
         assert url is not None
         assert url.startswith("http://127.0.0.1:")
-        async with httpx.AsyncClient() as http:
+        # trust_env=False: a system proxy must not intercept this loopback request.
+        async with httpx.AsyncClient(trust_env=False) as http:
             response = await http.get(f"{url}/api/health")
         assert response.json() == {"status": "ok"}
     finally:

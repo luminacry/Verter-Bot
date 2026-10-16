@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
 
@@ -70,13 +71,42 @@ class Platform(ABC):
     def parse_settings[M: BaseModel](self, model: type[M]) -> M:
         """Validate the adapter-specific keys of this platform's config entry.
 
+        A string value written as ``ENV:NAME`` is read from the environment variable
+        ``NAME``, so secrets such as tokens can stay out of ``config.yaml``.
+
         Raises:
-            ConfigError: If the keys do not match ``model``.
+            ConfigError: If the keys do not match ``model`` or a referenced variable is unset.
         """
+        settings = {
+            key: _resolve_env(self.config.id, key, value)
+            for key, value in self.config.settings.items()
+        }
         try:
-            return model.model_validate(self.config.settings)
+            return model.model_validate(settings)
         except ValidationError as exc:
             details = "; ".join(
                 f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.errors()
             )
             raise ConfigError(f"platform {self.config.id!r}: {details}") from exc
+
+
+_ENV_PREFIX = "ENV:"
+
+
+def _resolve_env(platform_id: str, key: str, value: Any) -> Any:
+    """Replace an ``ENV:NAME`` string with the value of environment variable ``NAME``.
+
+    Raises:
+        ConfigError: If the variable name is empty or the variable is not set.
+    """
+    if not isinstance(value, str) or not value.startswith(_ENV_PREFIX):
+        return value
+    name = value[len(_ENV_PREFIX) :].strip()
+    if not name:
+        raise ConfigError(f"platform {platform_id!r}: {key}: empty environment variable name")
+    resolved = os.environ.get(name)
+    if resolved is None:
+        raise ConfigError(
+            f"platform {platform_id!r}: {key}: environment variable {name!r} is not set"
+        )
+    return resolved

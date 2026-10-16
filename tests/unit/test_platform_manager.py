@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Callable
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from verter.core.config import ConfigError, PlatformConfig
 from verter.core.message.message_event_result import MessageChain
@@ -164,3 +165,32 @@ def test_registering_the_same_adapter_twice_is_idempotent() -> None:
                 pass
     finally:
         unregister_platform_adapter("scripted")
+
+
+class _TokenSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = ""
+    port: int = 0
+
+
+def _scripted(**settings: object) -> _Scripted:
+    config = PlatformConfig.model_validate({"id": "p", "type": "scripted", **settings})
+    return _Scripted(config, PlatformContext(sink=_Sink(), request_shutdown=lambda: None))
+
+
+def test_settings_read_env_references(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VERTER_TEST_TOKEN", "s3cret")
+    parsed = _scripted(token="ENV:VERTER_TEST_TOKEN", port=6199).parse_settings(_TokenSettings)
+    assert parsed.token == "s3cret"
+    assert parsed.port == 6199
+    # Strings without the prefix are left alone.
+    assert _scripted(token="plain").parse_settings(_TokenSettings).token == "plain"
+
+
+def test_missing_or_empty_env_references_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("VERTER_TEST_MISSING", raising=False)
+    with pytest.raises(ConfigError, match=r"VERTER_TEST_MISSING.*not set"):
+        _scripted(token="ENV:VERTER_TEST_MISSING").parse_settings(_TokenSettings)
+    with pytest.raises(ConfigError, match="empty environment variable name"):
+        _scripted(token="ENV:").parse_settings(_TokenSettings)
