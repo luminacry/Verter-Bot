@@ -41,7 +41,7 @@ aiohttp 长轮询 `getUpdates`，私聊与群聊；按官方限速控制发送�
 
 ## 阶段 3：平台页与性能预算（P2-3）
 
-平台列表 API（状态、重启次数、最后错误、在线状态）与单个适配器重启；WebUI 平台页（三态、中英文、亮暗、视觉基线、axe、e2e）；空载 RSS（OneBot + Telegram）< 80 MB。
+状态：平台列表 API 与按 id 重启已完成（`/api/platforms`）。WebUI 平台页延后，优先做 OneBot 人格与跨群对话，见 [P3_ONEBOT_PERSONA_PLAN.md](P3_ONEBOT_PERSONA_PLAN.md)。空载 RSS 预算仍待补。
 
 ## 阶段 4：模型与会话（P3）
 
